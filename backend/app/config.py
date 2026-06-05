@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     openai_realtime_model: str = Field(default="gpt-realtime", alias="OPENAI_REALTIME_MODEL")
-    openai_realtime_voice: str = Field(default="alloy", alias="OPENAI_REALTIME_VOICE")
+    openai_realtime_voice: str = Field(default="marin", alias="OPENAI_REALTIME_VOICE")
     azure_speech_key: str = Field(default="", alias="AZURE_SPEECH_KEY")
     azure_speech_region: str = Field(default="", alias="AZURE_SPEECH_REGION")
     database_url: str = Field(default="sqlite:///./data/coach.db", alias="DATABASE_URL")

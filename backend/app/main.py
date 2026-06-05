@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import init_db
+from app.routes.realtime import router as realtime_router
 from app.routes.sessions import router as sessions_router
 
 
@@ -34,6 +35,7 @@ app.add_middleware(
 )
 
 app.include_router(sessions_router)
+app.include_router(realtime_router)
 
 
 @app.get("/health")
