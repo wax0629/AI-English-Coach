@@ -40,6 +40,13 @@ def build_realtime_session_config(
             "model": settings.openai_realtime_model,
             "instructions": build_realtime_instructions(scenario, difficulty),
             "audio": {
+                "input": {
+                    "transcription": {
+                        "model": settings.openai_realtime_transcription_model,
+                        "language": "en",
+                        "delay": "low",
+                    },
+                },
                 "output": {
                     "voice": settings.openai_realtime_voice,
                 },
