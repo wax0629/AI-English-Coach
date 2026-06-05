@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     azure_speech_region: str = Field(default="", alias="AZURE_SPEECH_REGION")
     database_url: str = Field(default="sqlite:///./data/coach.db", alias="DATABASE_URL")
     backend_cors_origins: str = Field(
-        default="http://localhost:5173",
+        default="http://localhost:5173,http://127.0.0.1:5173",
         alias="BACKEND_CORS_ORIGINS",
     )
 
