@@ -89,5 +89,10 @@ async def test_realtime_client_secret_uses_session_scenario(monkeypatch: pytest.
     assert captured_config["session"]["type"] == "realtime"
     assert captured_config["session"]["model"] == "gpt-realtime"
     assert captured_config["session"]["audio"]["output"]["voice"] == "marin"
+    assert captured_config["session"]["audio"]["input"]["transcription"] == {
+        "model": "gpt-realtime-whisper",
+        "language": "en",
+        "delay": "low",
+    }
     assert "Hiring Manager" in captured_config["session"]["instructions"]
     assert "求职面试" in captured_config["session"]["instructions"]

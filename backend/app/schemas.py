@@ -43,3 +43,24 @@ class RealtimeClientSecretResponse(BaseModel):
     expires_at: int | None
     model: str
     voice: str
+
+
+ConversationRole = Literal["user", "assistant"]
+
+
+class CreateConversationTurnRequest(BaseModel):
+    session_id: str = Field(min_length=1)
+    role: ConversationRole
+    text: str = Field(min_length=1)
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+
+
+class ConversationTurnResponse(BaseModel):
+    turn_id: str
+    session_id: str
+    role: ConversationRole
+    text: str
+    started_at: datetime | None
+    ended_at: datetime | None
+    created_at: datetime
