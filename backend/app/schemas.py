@@ -30,3 +30,16 @@ class SessionResponse(BaseModel):
     difficulty: Difficulty
     status: Literal["active", "finished"]
     created_at: datetime
+
+
+class CreateRealtimeClientSecretRequest(BaseModel):
+    session_id: str = Field(min_length=1)
+
+
+class RealtimeClientSecretResponse(BaseModel):
+    session_id: str
+    realtime_session_id: str | None
+    client_secret: str
+    expires_at: int | None
+    model: str
+    voice: str
