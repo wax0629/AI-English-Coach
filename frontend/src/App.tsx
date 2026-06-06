@@ -206,6 +206,54 @@ const voiceProviderOptions: Array<{ id: VoiceProvider; label: string; caption: s
   { id: "gemini", label: "Gemini Live", caption: "WebSocket 音频" },
 ];
 
+// Keep scene dressing in CSS so live voice checks never wait on large images.
+function ScenarioBackdrop({ scenarioId }: { scenarioId: string }) {
+  if (scenarioId === "restaurant") {
+    return (
+      <div className="scenario-backdrop restaurant-backdrop" aria-hidden="true">
+        <span className="awning" />
+        <span className="menu-board board-one" />
+        <span className="menu-board board-two" />
+        <span className="pendant pendant-one" />
+        <span className="pendant pendant-two" />
+        <span className="counter-line" />
+      </div>
+    );
+  }
+
+  if (scenarioId === "interview") {
+    return (
+      <div className="scenario-backdrop interview-backdrop" aria-hidden="true">
+        <span className="office-window" />
+        <span className="wall-frame" />
+        <span className="desk-surface" />
+        <span className="candidate-card card-one" />
+        <span className="candidate-card card-two" />
+        <span className="desk-lamp" />
+        <span className="plant-mark" />
+      </div>
+    );
+  }
+
+  if (scenarioId === "meeting") {
+    return (
+      <div className="scenario-backdrop meeting-backdrop" aria-hidden="true">
+        <span className="screen-wall" />
+        <span className="screen-chart" />
+        <span className="agenda-strip strip-one" />
+        <span className="agenda-strip strip-two" />
+        <span className="agenda-strip strip-three" />
+        <span className="conference-table" />
+        <span className="meeting-chair chair-one" />
+        <span className="meeting-chair chair-two" />
+        <span className="meeting-chair chair-three" />
+      </div>
+    );
+  }
+
+  return null;
+}
+
 function App() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>("");
@@ -847,16 +895,7 @@ function App() {
 
         <section className="practice-layout" aria-label="practice room">
           <section className={`coach-stage scenario-${activeScenario.id}`} aria-label="voice stage">
-            {activeScenario.id === "restaurant" ? (
-              <div className="restaurant-backdrop" aria-hidden="true">
-                <span className="awning" />
-                <span className="menu-board board-one" />
-                <span className="menu-board board-two" />
-                <span className="pendant pendant-one" />
-                <span className="pendant pendant-two" />
-                <span className="counter-line" />
-              </div>
-            ) : null}
+            <ScenarioBackdrop scenarioId={activeScenario.id} />
             <div className="stage-grid" aria-hidden="true" />
             <div className={`voice-core ${realtimeStatus}`}>
               <span className="voice-ring" />
