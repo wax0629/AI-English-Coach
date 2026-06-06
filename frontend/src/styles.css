@@ -203,8 +203,45 @@ button:disabled {
   color: var(--ink);
 }
 
-.scenario-restaurant::before {
+.scenario-restaurant::before,
+.scenario-interview::before,
+.scenario-meeting::before {
   display: none;
+}
+
+.scenario-interview {
+  background:
+    radial-gradient(circle at 19% 28%, rgba(78, 181, 143, 0.23), transparent 28%),
+    radial-gradient(circle at 78% 18%, rgba(92, 116, 210, 0.14), transparent 26%),
+    linear-gradient(180deg, #eef8f2 0%, #fffdf8 54%, #ece0cf 54%, #fbf0d9 100%);
+  color: var(--ink);
+}
+
+.scenario-meeting {
+  background:
+    radial-gradient(circle at 75% 16%, rgba(96, 107, 220, 0.18), transparent 27%),
+    radial-gradient(circle at 18% 30%, rgba(245, 185, 66, 0.18), transparent 26%),
+    linear-gradient(180deg, #eef5f6 0%, #fffdf8 50%, #dfe6dd 50%, #f9efd8 100%);
+  color: var(--ink);
+}
+
+.scenario-interview::after,
+.scenario-meeting::after {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(90deg, rgba(255, 253, 248, 0.08) 0 42%, rgba(255, 253, 248, 0.78) 55% 100%);
+  content: "";
+  pointer-events: none;
+}
+
+/* Scene props share one CSS-only stage language, so each room stays fast and responsive. */
+.scenario-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .restaurant-backdrop {
@@ -354,12 +391,272 @@ button:disabled {
   content: "";
 }
 
+.interview-backdrop::before {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(21, 32, 28, 0.035) 0 1px, transparent 1px 72px),
+    linear-gradient(180deg, rgba(255, 253, 248, 0.32) 0 56%, rgba(92, 116, 210, 0.05) 56% 100%);
+  content: "";
+}
+
+.interview-backdrop .office-window {
+  position: absolute;
+  top: 42px;
+  left: 34px;
+  width: 230px;
+  height: 152px;
+  border: 4px solid rgba(255, 253, 248, 0.92);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, transparent 48%, rgba(255, 253, 248, 0.72) 48% 52%, transparent 52%),
+    linear-gradient(180deg, transparent 48%, rgba(255, 253, 248, 0.72) 48% 52%, transparent 52%),
+    linear-gradient(135deg, rgba(92, 116, 210, 0.28), rgba(78, 181, 143, 0.2));
+  box-shadow: 0 20px 54px rgba(49, 75, 84, 0.14);
+  opacity: 0.72;
+}
+
+.interview-backdrop .office-window::after {
+  position: absolute;
+  inset: 13px 16px;
+  background: repeating-linear-gradient(180deg, rgba(21, 32, 28, 0.12) 0 2px, transparent 2px 18px);
+  content: "";
+  opacity: 0.62;
+}
+
+.interview-backdrop .wall-frame {
+  position: absolute;
+  top: 54px;
+  right: 58px;
+  width: 168px;
+  height: 112px;
+  border: 2px solid rgba(21, 32, 28, 0.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(245, 185, 66, 0.2) 0 38%, transparent 38%),
+    linear-gradient(180deg, rgba(255, 253, 248, 0.84), rgba(238, 247, 242, 0.64));
+  box-shadow: inset 0 -12px 0 rgba(78, 181, 143, 0.11);
+  opacity: 0.48;
+}
+
+.interview-backdrop .desk-surface {
+  position: absolute;
+  right: 0;
+  bottom: 64px;
+  left: 0;
+  height: 34px;
+  border-top: 3px solid rgba(21, 32, 28, 0.12);
+  background:
+    linear-gradient(90deg, rgba(21, 32, 28, 0.08), rgba(245, 185, 66, 0.22), rgba(78, 181, 143, 0.12)),
+    rgba(255, 253, 248, 0.58);
+}
+
+.interview-backdrop .candidate-card {
+  position: absolute;
+  bottom: 106px;
+  width: 96px;
+  height: 64px;
+  border: 1px solid rgba(21, 32, 28, 0.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(78, 181, 143, 0.24) 0 22px, transparent 22px),
+    linear-gradient(180deg, rgba(255, 253, 248, 0.94), rgba(255, 247, 224, 0.86));
+  box-shadow: 0 18px 36px rgba(49, 75, 84, 0.12);
+}
+
+.interview-backdrop .candidate-card::after {
+  position: absolute;
+  top: 16px;
+  right: 13px;
+  left: 34px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(21, 32, 28, 0.28);
+  box-shadow:
+    0 13px 0 rgba(21, 32, 28, 0.15),
+    0 26px 0 rgba(245, 185, 66, 0.56);
+  content: "";
+}
+
+.interview-backdrop .card-one {
+  left: 48px;
+  transform: rotate(-4deg);
+}
+
+.interview-backdrop .card-two {
+  left: 164px;
+  opacity: 0.58;
+  transform: rotate(5deg);
+}
+
+.interview-backdrop .desk-lamp {
+  position: absolute;
+  right: 186px;
+  bottom: 98px;
+  width: 54px;
+  height: 66px;
+  border-radius: 999px 999px 10px 10px;
+  background:
+    radial-gradient(circle at 50% 22%, rgba(255, 253, 248, 0.9), transparent 34%),
+    linear-gradient(180deg, rgba(245, 185, 66, 0.9), rgba(213, 89, 58, 0.82));
+  box-shadow: 0 22px 54px rgba(245, 185, 66, 0.2);
+  opacity: 0.58;
+}
+
+.interview-backdrop .plant-mark {
+  position: absolute;
+  right: 52px;
+  bottom: 94px;
+  width: 78px;
+  height: 92px;
+  border-bottom: 34px solid rgba(213, 89, 58, 0.5);
+  border-radius: 0 0 18px 18px;
+}
+
+.interview-backdrop .plant-mark::before {
+  position: absolute;
+  right: 12px;
+  bottom: 25px;
+  left: 12px;
+  height: 72px;
+  border-radius: 999px 999px 12px 12px;
+  background:
+    radial-gradient(ellipse at 20% 62%, rgba(78, 181, 143, 0.72) 0 17px, transparent 18px),
+    radial-gradient(ellipse at 48% 36%, rgba(78, 181, 143, 0.58) 0 20px, transparent 21px),
+    radial-gradient(ellipse at 76% 60%, rgba(24, 169, 153, 0.66) 0 17px, transparent 18px);
+  content: "";
+}
+
+.meeting-backdrop::before {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(21, 32, 28, 0.04) 0 1px, transparent 1px 84px),
+    linear-gradient(180deg, rgba(255, 253, 248, 0.42) 0 50%, rgba(92, 116, 210, 0.07) 50% 100%);
+  content: "";
+}
+
+.meeting-backdrop .screen-wall {
+  position: absolute;
+  top: 48px;
+  right: 66px;
+  width: 282px;
+  height: 156px;
+  border: 3px solid rgba(255, 253, 248, 0.78);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 82% 24%, rgba(245, 185, 66, 0.26), transparent 24%),
+    linear-gradient(135deg, rgba(21, 32, 28, 0.88), rgba(37, 63, 83, 0.78));
+  box-shadow: 0 24px 64px rgba(43, 67, 87, 0.16);
+  opacity: 0.66;
+}
+
+.meeting-backdrop .screen-chart {
+  position: absolute;
+  top: 92px;
+  right: 116px;
+  width: 170px;
+  height: 70px;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(78, 181, 143, 0.82) 0 18%, transparent 18% 25%, rgba(245, 185, 66, 0.78) 25% 52%, transparent 52% 60%, rgba(213, 89, 58, 0.72) 60% 100%);
+  opacity: 0.62;
+}
+
+.meeting-backdrop .screen-chart::after {
+  position: absolute;
+  right: 0;
+  bottom: -18px;
+  left: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.56);
+  box-shadow:
+    0 11px 0 rgba(255, 253, 248, 0.34),
+    0 22px 0 rgba(245, 185, 66, 0.42);
+  content: "";
+}
+
+.meeting-backdrop .agenda-strip {
+  position: absolute;
+  left: 48px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(21, 32, 28, 0.16);
+  box-shadow: 0 14px 0 rgba(78, 181, 143, 0.24);
+}
+
+.meeting-backdrop .strip-one {
+  top: 64px;
+  width: 148px;
+}
+
+.meeting-backdrop .strip-two {
+  top: 108px;
+  width: 204px;
+  background: rgba(245, 185, 66, 0.42);
+}
+
+.meeting-backdrop .strip-three {
+  top: 152px;
+  width: 118px;
+  background: rgba(213, 89, 58, 0.36);
+}
+
+.meeting-backdrop .conference-table {
+  position: absolute;
+  right: 28px;
+  bottom: 48px;
+  left: 28px;
+  height: 88px;
+  border-top: 3px solid rgba(21, 32, 28, 0.16);
+  border-radius: 50% 50% 8px 8px / 60% 60% 8px 8px;
+  background:
+    radial-gradient(ellipse at 50% 0, rgba(255, 253, 248, 0.6), transparent 62%),
+    linear-gradient(90deg, rgba(78, 181, 143, 0.28), rgba(245, 185, 66, 0.28), rgba(92, 116, 210, 0.18));
+  box-shadow: 0 -18px 38px rgba(21, 32, 28, 0.08);
+  opacity: 0.82;
+}
+
+.meeting-backdrop .meeting-chair {
+  position: absolute;
+  bottom: 102px;
+  width: 52px;
+  height: 42px;
+  border-radius: 12px 12px 6px 6px;
+  background: rgba(21, 32, 28, 0.22);
+  box-shadow: 0 20px 0 rgba(21, 32, 28, 0.08);
+}
+
+.meeting-backdrop .chair-one {
+  left: 72px;
+}
+
+.meeting-backdrop .chair-two {
+  left: 252px;
+  background: rgba(78, 181, 143, 0.36);
+}
+
+.meeting-backdrop .chair-three {
+  right: 86px;
+  background: rgba(213, 89, 58, 0.28);
+}
+
 .scenario-restaurant .stage-grid {
   background:
     linear-gradient(90deg, rgba(21, 32, 28, 0.05) 1px, transparent 1px),
     linear-gradient(180deg, rgba(21, 32, 28, 0.05) 1px, transparent 1px);
   mask-image: none;
   opacity: 0.76;
+}
+
+.scenario-interview .stage-grid,
+.scenario-meeting .stage-grid {
+  background:
+    linear-gradient(90deg, rgba(21, 32, 28, 0.045) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(21, 32, 28, 0.045) 1px, transparent 1px);
+  mask-image: none;
+  opacity: 0.48;
 }
 
 .scenario-restaurant .voice-core::before {
@@ -373,6 +670,18 @@ button:disabled {
   content: "";
 }
 
+.scenario-interview .voice-core::before,
+.scenario-meeting .voice-core::before {
+  position: absolute;
+  inset: 16px;
+  border: 1px solid rgba(21, 32, 28, 0.12);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(255, 253, 248, 0.76) 0 44%, rgba(78, 181, 143, 0.16) 45% 74%, transparent 75%);
+  box-shadow: 0 22px 70px rgba(49, 75, 84, 0.14);
+  content: "";
+}
+
 .scenario-restaurant .voice-avatar {
   border-color: rgba(255, 253, 248, 0.86);
   background:
@@ -380,6 +689,39 @@ button:disabled {
     #fffdf8;
   color: rgba(21, 32, 28, 0.92);
   box-shadow: 0 22px 62px rgba(145, 97, 35, 0.2);
+}
+
+.scenario-interview .voice-avatar {
+  border-color: rgba(255, 253, 248, 0.9);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 248, 0.98), rgba(226, 246, 236, 0.86)),
+    #fffdf8;
+  color: rgba(21, 32, 28, 0.92);
+  box-shadow: 0 22px 62px rgba(49, 75, 84, 0.18);
+}
+
+.scenario-meeting .voice-avatar {
+  border-color: rgba(255, 253, 248, 0.9);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 248, 0.98), rgba(235, 239, 255, 0.86)),
+    #fffdf8;
+  color: rgba(21, 32, 28, 0.92);
+  box-shadow: 0 22px 62px rgba(43, 67, 87, 0.18);
+}
+
+.scenario-interview .stage-copy,
+.scenario-meeting .stage-copy {
+  text-shadow: 0 1px 0 rgba(255, 253, 248, 0.78);
+}
+
+.scenario-interview .stage-copy::before,
+.scenario-meeting .stage-copy::before {
+  position: absolute;
+  inset: -14px -18px;
+  z-index: -1;
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(255, 253, 248, 0.86), rgba(255, 253, 248, 0.52));
+  content: "";
 }
 
 .stage-grid {
@@ -1948,6 +2290,23 @@ h1 {
       linear-gradient(180deg, #fff8e8 0%, #fffdf8 58%, #fff1cf 58%, #fff8e8 100%);
   }
 
+  .scenario-interview {
+    background:
+      radial-gradient(circle at 50% 22%, rgba(78, 181, 143, 0.22), transparent 34%),
+      linear-gradient(180deg, #eef8f2 0%, #fffdf8 58%, #f2e5d1 58%, #fff8e8 100%);
+  }
+
+  .scenario-meeting {
+    background:
+      radial-gradient(circle at 50% 22%, rgba(92, 116, 210, 0.16), transparent 34%),
+      linear-gradient(180deg, #eef5f6 0%, #fffdf8 58%, #e9e5d6 58%, #fff8e8 100%);
+  }
+
+  .scenario-interview::after,
+  .scenario-meeting::after {
+    background: linear-gradient(180deg, rgba(255, 253, 248, 0.18) 0 38%, rgba(255, 253, 248, 0.78) 44% 100%);
+  }
+
   .restaurant-backdrop .awning {
     left: 0;
     height: 58px;
@@ -1971,6 +2330,55 @@ h1 {
     right: 22px;
     transform: scale(0.74);
     transform-origin: right bottom;
+  }
+
+  .interview-backdrop .office-window {
+    top: 16px;
+    left: 18px;
+    width: 156px;
+    height: 104px;
+    opacity: 0.25;
+  }
+
+  .interview-backdrop .wall-frame,
+  .interview-backdrop .candidate-card,
+  .interview-backdrop .desk-lamp,
+  .interview-backdrop .plant-mark {
+    display: none;
+  }
+
+  .interview-backdrop .desk-surface {
+    bottom: 36%;
+    height: 18px;
+    opacity: 0.34;
+  }
+
+  .meeting-backdrop .screen-wall {
+    top: 18px;
+    right: 20px;
+    width: 168px;
+    height: 96px;
+    opacity: 0.26;
+  }
+
+  .meeting-backdrop .screen-chart,
+  .meeting-backdrop .agenda-strip,
+  .meeting-backdrop .meeting-chair {
+    display: none;
+  }
+
+  .meeting-backdrop .conference-table {
+    right: 0;
+    bottom: 35%;
+    left: 0;
+    height: 42px;
+    opacity: 0.32;
+  }
+
+  .scenario-interview .stage-copy::before,
+  .scenario-meeting .stage-copy::before {
+    inset: -10px -12px;
+    background: rgba(255, 253, 248, 0.72);
   }
 
   .voice-core {
