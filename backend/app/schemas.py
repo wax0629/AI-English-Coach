@@ -45,6 +45,19 @@ class RealtimeClientSecretResponse(BaseModel):
     voice: str
 
 
+class CreateGeminiLiveTokenRequest(BaseModel):
+    session_id: str = Field(min_length=1)
+
+
+class GeminiLiveTokenResponse(BaseModel):
+    session_id: str
+    token: str
+    expire_time: str | None
+    new_session_expire_time: str | None
+    model: str
+    api_version: str
+
+
 ConversationRole = Literal["user", "assistant"]
 
 

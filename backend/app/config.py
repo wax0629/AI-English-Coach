@@ -12,6 +12,11 @@ class Settings(BaseSettings):
         default="gpt-realtime-whisper",
         alias="OPENAI_REALTIME_TRANSCRIPTION_MODEL",
     )
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    gemini_live_model: str = Field(
+        default="gemini-3.1-flash-live-preview",
+        alias="GEMINI_LIVE_MODEL",
+    )
     azure_speech_key: str = Field(default="", alias="AZURE_SPEECH_KEY")
     azure_speech_region: str = Field(default="", alias="AZURE_SPEECH_REGION")
     database_url: str = Field(default="sqlite:///./data/coach.db", alias="DATABASE_URL")

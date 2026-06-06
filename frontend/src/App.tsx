@@ -31,7 +31,8 @@ import "./styles.css";
 
 type Difficulty = "a2" | "b1" | "b2";
 type AppView = "map" | "room";
-type RealtimeStatus = "idle" | "connecting" | "listening" | "speaking" | "ended" | "error";
+type VoiceProvider = "openai" | "gemini";
+type RealtimeStatus = "idle" | "connecting" | "ready" | "listening" | "speaking" | "ended" | "error";
 
 type Scenario = {
   id: string;
@@ -70,6 +71,15 @@ type RealtimeClientSecret = {
   expires_at: number | null;
   model: string;
   voice: string;
+};
+
+type GeminiLiveToken = {
+  session_id: string;
+  token: string;
+  expire_time: string | null;
+  new_session_expire_time: string | null;
+  model: string;
+  api_version: string;
 };
 
 type RealtimeEvent = {
@@ -141,11 +151,17 @@ const scenarioMeta: Record<string, ScenarioMeta> = {
 const realtimeStatusLabels: Record<RealtimeStatus, { label: string; hint: string }> = {
   idle: { label: "待连接", hint: "VOICE IDLE" },
   connecting: { label: "连接中", hint: "SYNCING" },
+  ready: { label: "Token 就绪", hint: "GEMINI READY" },
   listening: { label: "聆听中", hint: "LISTENING" },
   speaking: { label: "AI 回复中", hint: "COACH LIVE" },
   ended: { label: "已结束", hint: "SESSION SAVED" },
   error: { label: "连接错误", hint: "CHECK LINK" },
 };
+
+const voiceProviderOptions: Array<{ id: VoiceProvider; label: string; caption: string }> = [
+  { id: "openai", label: "OpenAI Realtime", caption: "WebRTC 语音" },
+  { id: "gemini", label: "Gemini Live", caption: "免费层备选" },
+];
 
 function App() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
@@ -161,6 +177,7 @@ function App() {
   const [createdSession, setCreatedSession] = useState<CreatedSession | null>(null);
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("idle");
+  const [voiceProvider, setVoiceProvider] = useState<VoiceProvider>("openai");
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
@@ -303,6 +320,9 @@ function App() {
       setRealtimeStatus("idle");
       setRoomNotice("副本已锁定，等待语音链路启动");
       setView("room");
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Session 创建失败");
     } finally {
@@ -483,6 +503,46 @@ function App() {
     }
   }
 
+  async function checkGeminiLiveToken() {
+    if (!createdSession) {
+      return;
+    }
+
+    try {
+      closeRealtimeConnection("connecting");
+      setIsConnectingRealtime(true);
+      setRoomError("");
+      setRoomNotice("正在向后端申请 Gemini Live 临时 token");
+
+      const tokenResponse = await fetch(`${apiBaseUrl}/api/gemini/live-token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: createdSession.session_id }),
+      });
+      if (!tokenResponse.ok) {
+        const payload = (await tokenResponse.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail ?? "Gemini Live token 创建失败");
+      }
+      const gemini = (await tokenResponse.json()) as GeminiLiveToken;
+      setRealtimeStatus("ready");
+      setRoomNotice(`Gemini Live token 已就绪：${gemini.model}，下一步可接 AudioWorklet 音频流`);
+    } catch (connectError) {
+      closeRealtimeConnection("error");
+      setRoomError(connectError instanceof Error ? connectError.message : "Gemini Live token 创建失败");
+      setRoomNotice("Gemini Live 暂不可用，可以切回 OpenAI Realtime 继续演示");
+    } finally {
+      setIsConnectingRealtime(false);
+    }
+  }
+
+  function startSelectedVoiceProvider() {
+    if (voiceProvider === "gemini") {
+      void checkGeminiLiveToken();
+      return;
+    }
+    void startRealtimeConversation();
+  }
+
   function returnToMap() {
     closeRealtimeConnection("ended");
     setView("map");
@@ -513,7 +573,17 @@ function App() {
         </header>
 
         <section className="practice-layout" aria-label="practice room">
-          <section className="coach-stage" aria-label="voice stage">
+          <section className={`coach-stage scenario-${activeScenario.id}`} aria-label="voice stage">
+            {activeScenario.id === "restaurant" ? (
+              <div className="restaurant-backdrop" aria-hidden="true">
+                <span className="awning" />
+                <span className="menu-board board-one" />
+                <span className="menu-board board-two" />
+                <span className="pendant pendant-one" />
+                <span className="pendant pendant-two" />
+                <span className="counter-line" />
+              </div>
+            ) : null}
             <div className="stage-grid" aria-hidden="true" />
             <div className={`voice-core ${realtimeStatus}`}>
               <span className="voice-ring" />
@@ -535,11 +605,11 @@ function App() {
               <button
                 className="primary-voice-button"
                 disabled={isConnectingRealtime || realtimeStatus === "listening" || realtimeStatus === "speaking"}
-                onClick={startRealtimeConversation}
+                onClick={startSelectedVoiceProvider}
                 type="button"
               >
                 {isConnectingRealtime ? <Loader2 className="spin" aria-hidden="true" /> : <Mic aria-hidden="true" />}
-                <span>{isConnectingRealtime ? "连接中" : "开始语音"}</span>
+                <span>{isConnectingRealtime ? "连接中" : voiceProvider === "gemini" ? "验证 Gemini" : "开始语音"}</span>
               </button>
               <button
                 className="ghost-voice-button"
@@ -557,6 +627,28 @@ function App() {
             <div className="console-header">
               <span>Mission Console</span>
               <strong>{createdSession.difficulty.toUpperCase()}</strong>
+            </div>
+            <div className="provider-switch" aria-label="voice provider">
+              {voiceProviderOptions.map((provider) => (
+                <button
+                  className={provider.id === voiceProvider ? "is-active" : ""}
+                  key={provider.id}
+                  onClick={() => {
+                    closeRealtimeConnection("idle");
+                    setVoiceProvider(provider.id);
+                    setRoomError("");
+                    setRoomNotice(
+                      provider.id === "gemini"
+                        ? "Gemini Live 作为备用 Provider，先验证临时 token"
+                        : "OpenAI Realtime 将使用 WebRTC 语音链路",
+                    );
+                  }}
+                  type="button"
+                >
+                  <span>{provider.label}</span>
+                  <small>{provider.caption}</small>
+                </button>
+              ))}
             </div>
             <div className="console-metric">
               <Trophy aria-hidden="true" />
