@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.database import init_db
 from app.routes.conversation import router as conversation_router
+from app.routes.gemini import router as gemini_router
 from app.routes.realtime import router as realtime_router
 from app.routes.sessions import router as sessions_router
 
@@ -38,6 +39,7 @@ app.add_middleware(
 app.include_router(sessions_router)
 app.include_router(realtime_router)
 app.include_router(conversation_router)
+app.include_router(gemini_router)
 
 
 @app.get("/health")
