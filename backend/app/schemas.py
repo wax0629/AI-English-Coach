@@ -58,6 +58,42 @@ class GeminiLiveTokenResponse(BaseModel):
     api_version: str
 
 
+class PronunciationAssessRequest(BaseModel):
+    session_id: str = Field(min_length=1)
+    reference_text: str = Field(min_length=1, max_length=280)
+    audio_base64: str = Field(min_length=1)
+    content_type: str = "audio/wav"
+    language: str = Field(default="en-US", min_length=2, max_length=12)
+
+
+class PronunciationScores(BaseModel):
+    pronunciation: int = Field(ge=0, le=100)
+    accuracy: int = Field(ge=0, le=100)
+    fluency: int = Field(ge=0, le=100)
+    completeness: int = Field(ge=0, le=100)
+    prosody: int = Field(ge=0, le=100)
+
+
+class PronunciationWordScore(BaseModel):
+    word: str
+    accuracy: int = Field(ge=0, le=100)
+    error_type: str
+
+
+class PronunciationFeedback(BaseModel):
+    level: Literal["excellent", "good", "needs_focus", "retry"]
+    message: str
+
+
+class PronunciationAssessmentResponse(BaseModel):
+    session_id: str
+    reference_text: str
+    recognized_text: str
+    scores: PronunciationScores
+    words: list[PronunciationWordScore]
+    feedback: PronunciationFeedback
+
+
 ConversationRole = Literal["user", "assistant"]
 
 

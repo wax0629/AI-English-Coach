@@ -176,6 +176,28 @@ export async function readSocketMessageText(rawData: unknown) {
   throw new Error("Gemini Live returned an unsupported WebSocket message type");
 }
 
+function joinTranscriptText(currentText: string, nextText: string) {
+  const current = currentText.trim();
+  const next = nextText.trim();
+  if (!current) {
+    return next;
+  }
+  if (!next || current.endsWith(next)) {
+    return current;
+  }
+  // Gemini may send cumulative transcript snapshots; keep the latest full snapshot instead of duplicating words.
+  if (next.startsWith(current)) {
+    return next;
+  }
+  if (/^[,.;:!?]/.test(next)) {
+    return `${current}${next}`;
+  }
+  if (/[-'’]$/.test(current) || /^[-'’]/.test(next)) {
+    return `${current}${next}`;
+  }
+  return `${current} ${next}`;
+}
+
 function buildGeminiLiveWebsocketUrl(token: GeminiLiveToken) {
   const apiVersion = token.api_version || "v1alpha";
   const method = `google.ai.generativelanguage.${apiVersion}.GenerativeService.BidiGenerateContentConstrained`;
@@ -253,6 +275,11 @@ export class GeminiLiveAudioSession {
   private player: PcmAudioPlayer | null = null;
   private startedCapture = false;
   private closed = false;
+  private transcriptBuffers: Record<GeminiTranscriptEvent["role"], string> = {
+    user: "",
+    assistant: "",
+  };
+  private transcriptSequence = 0;
 
   constructor(
     private readonly token: GeminiLiveToken,
@@ -286,6 +313,7 @@ export class GeminiLiveAudioSession {
 
   close() {
     this.closed = true;
+    this.flushAllTranscripts();
     this.socket?.close();
     this.socket = null;
     this.captureNode?.disconnect();
@@ -300,6 +328,7 @@ export class GeminiLiveAudioSession {
     void this.audioContext?.close();
     this.audioContext = null;
     this.startedCapture = false;
+    this.transcriptBuffers = { user: "", assistant: "" };
   }
 
   private async openSocket() {
@@ -400,14 +429,15 @@ export class GeminiLiveAudioSession {
       }
 
       if (serverContent.interrupted) {
+        this.flushAllTranscripts();
         this.player?.reset();
         this.callbacks.onInterrupted();
       }
       if (serverContent.inputTranscription?.text) {
-        this.emitTranscript("user", serverContent.inputTranscription.text);
+        this.bufferTranscript("user", serverContent.inputTranscription.text);
       }
       if (serverContent.outputTranscription?.text) {
-        this.emitTranscript("assistant", serverContent.outputTranscription.text);
+        this.bufferTranscript("assistant", serverContent.outputTranscription.text);
       }
 
       const parts = serverContent.modelTurn?.parts ?? [];
@@ -420,6 +450,7 @@ export class GeminiLiveAudioSession {
       }
 
       if (serverContent.generationComplete || serverContent.turnComplete) {
+        this.flushAllTranscripts();
         this.callbacks.onTurnComplete();
       }
     } catch (error) {
@@ -427,16 +458,31 @@ export class GeminiLiveAudioSession {
     }
   }
 
-  private emitTranscript(role: GeminiTranscriptEvent["role"], rawText: string) {
+  private bufferTranscript(role: GeminiTranscriptEvent["role"], rawText: string) {
     const text = rawText.trim();
     if (!text) {
       return;
     }
+    this.transcriptBuffers[role] = joinTranscriptText(this.transcriptBuffers[role], text);
+  }
+
+  private flushTranscript(role: GeminiTranscriptEvent["role"]) {
+    const text = this.transcriptBuffers[role].trim();
+    if (!text) {
+      return;
+    }
+    this.transcriptBuffers[role] = "";
+    this.transcriptSequence += 1;
 
     this.callbacks.onTranscript({
       role,
       text,
-      eventId: `gemini:${role}:${hashText(text)}`,
+      eventId: `gemini:${role}:${this.transcriptSequence}:${hashText(text)}`,
     });
+  }
+
+  private flushAllTranscripts() {
+    this.flushTranscript("user");
+    this.flushTranscript("assistant");
   }
 }
