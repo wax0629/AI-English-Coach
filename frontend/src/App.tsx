@@ -31,9 +31,10 @@ import { GeminiLiveAudioSession, type GeminiLiveToken, type GeminiTranscriptEven
 import "./styles.css";
 
 type Difficulty = "a2" | "b1" | "b2";
-type AppView = "map" | "room";
+type AppView = "map" | "room" | "report";
 type VoiceProvider = "openai" | "gemini";
 type RealtimeStatus = "idle" | "connecting" | "ready" | "listening" | "speaking" | "ended" | "error";
+type ReportLevel = "standard" | "advanced";
 
 type Scenario = {
   id: string;
@@ -63,6 +64,49 @@ type ConversationTurn = {
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
+};
+
+type PracticeReport = {
+  report_id: string;
+  session_id: string;
+  scenario_id: string;
+  difficulty: Difficulty;
+  generated_at: string;
+  summary: string;
+  scores: {
+    overall: number;
+    fluency: number;
+    grammar: number;
+    vocabulary: number;
+    goal_completion: number;
+  };
+  metrics: {
+    report_level: ReportLevel;
+    total_turns: number;
+    user_turns: number;
+    assistant_turns: number;
+    word_count: number;
+    average_words_per_user_turn: number;
+    target_expression_hits: string[];
+    missed_target_expressions: string[];
+    generation_mode: "rules" | "llm";
+    llm_provider: "rules" | "gemini" | "deepseek";
+    llm_model: string | null;
+    llm_error: string | null;
+  };
+  badges: string[];
+  strengths: string[];
+  corrections: Array<{
+    original: string;
+    suggestion: string;
+    reason: string;
+    severity: "low" | "medium" | "high";
+  }>;
+  drills: Array<{
+    title: string;
+    prompt: string;
+    target_expression: string;
+  }>;
 };
 
 type RealtimeClientSecret = {
@@ -97,6 +141,13 @@ type ScenarioMeta = {
 type AccentStyle = CSSProperties & { "--accent": string };
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+
+const scoreLabels: Array<{ key: keyof PracticeReport["scores"]; label: string; caption: string }> = [
+  { key: "fluency", label: "流利度", caption: "节奏与连续表达" },
+  { key: "grammar", label: "语法", caption: "句式稳定性" },
+  { key: "vocabulary", label: "词汇", caption: "场景表达丰富度" },
+  { key: "goal_completion", label: "目标", caption: "任务完成度" },
+];
 
 const difficultyOptions: Array<{ id: Difficulty; label: string; description: string }> = [
   { id: "a2", label: "轻松开口", description: "短句应答" },
@@ -163,11 +214,14 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [isConnectingRealtime, setIsConnectingRealtime] = useState(false);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [error, setError] = useState<string>("");
   const [roomError, setRoomError] = useState<string>("");
+  const [reportError, setReportError] = useState<string>("");
   const [roomNotice, setRoomNotice] = useState<string>("副本已锁定，等待语音链路启动");
   const [createdSession, setCreatedSession] = useState<CreatedSession | null>(null);
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
+  const [practiceReport, setPracticeReport] = useState<PracticeReport | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("idle");
   const [voiceProvider, setVoiceProvider] = useState<VoiceProvider>("openai");
 
@@ -268,7 +322,9 @@ function App() {
     setDifficulty(scenario.default_difficulty);
     setCreatedSession(null);
     setTurns([]);
+    setPracticeReport(null);
     setError("");
+    setReportError("");
   }
 
   function closeRealtimeConnection(nextStatus: RealtimeStatus) {
@@ -312,6 +368,7 @@ function App() {
       savedEventIdsRef.current.clear();
       setCreatedSession(data);
       setTurns([]);
+      setPracticeReport(null);
       setRealtimeStatus("idle");
       setRoomNotice("副本已锁定，等待语音链路启动");
       setView("room");
@@ -568,10 +625,201 @@ function App() {
     void startRealtimeConversation();
   }
 
+  async function generateReport(reportLevel: ReportLevel) {
+    if (!createdSession) {
+      return;
+    }
+
+    try {
+      closeRealtimeConnection("ended");
+      setIsGeneratingReport(true);
+      setReportError("");
+      setRoomError("");
+      setRoomNotice(reportLevel === "advanced" ? "正在生成进阶报告，DeepSeek Pro 会更仔细地批改" : "正在生成标准报告");
+
+      const response = await fetch(`${apiBaseUrl}/api/sessions/${createdSession.session_id}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ report_level: reportLevel }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail ?? "报告生成失败");
+      }
+
+      const report = (await response.json()) as PracticeReport;
+      setPracticeReport(report);
+      setView("report");
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    } catch (reportErrorValue) {
+      const message = reportErrorValue instanceof Error ? reportErrorValue.message : "报告生成失败";
+      setReportError(message);
+      setRoomError(message);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  }
+
   function returnToMap() {
     closeRealtimeConnection("ended");
     setView("map");
     setRoomError("");
+  }
+
+  function returnToRoom() {
+    setView("room");
+    setReportError("");
+  }
+
+  if (view === "report" && createdSession && activeScenario && practiceReport) {
+    const reportMeta = scenarioMeta[activeScenario.id];
+    const scoreItems = scoreLabels.map((score) => ({
+      ...score,
+      value: practiceReport.scores[score.key],
+    }));
+    const generatedBy =
+      practiceReport.metrics.generation_mode === "llm"
+        ? `${practiceReport.metrics.llm_provider} · ${practiceReport.metrics.llm_model}`
+        : "Rules fallback";
+
+    return (
+      <main className="report-shell">
+        <header className="report-hero">
+          <button className="icon-button" onClick={returnToRoom} type="button" title="返回练习房间">
+            <ArrowLeft aria-hidden="true" />
+          </button>
+          <div className="report-hero-copy">
+            <span>{reportMeta?.district ?? "Practice Zone"} · Battle Report</span>
+            <h1>{activeScenario.title} 战绩报告</h1>
+            <p>{practiceReport.summary}</p>
+          </div>
+          <div className={`report-level-badge ${practiceReport.metrics.report_level}`}>
+            <Sparkles aria-hidden="true" />
+            <span>{practiceReport.metrics.report_level === "advanced" ? "进阶报告" : "标准报告"}</span>
+          </div>
+        </header>
+
+        <section className="report-layout" aria-label="practice report">
+          <section className="score-command">
+            <div className="score-orbit" aria-label={`综合得分 ${practiceReport.scores.overall}`}>
+              <span>{practiceReport.scores.overall}</span>
+              <small>Overall</small>
+            </div>
+            <div className="score-copy">
+              <span>Rank Signal</span>
+              <h2>{practiceReport.scores.overall >= 85 ? "High Clear" : practiceReport.scores.overall >= 70 ? "Solid Clear" : "First Clear"}</h2>
+              <p>{generatedBy}</p>
+            </div>
+          </section>
+
+          <section className="score-grid" aria-label="score breakdown">
+            {scoreItems.map((score) => (
+              <article className="score-tile" key={score.key}>
+                <div>
+                  <span>{score.label}</span>
+                  <strong>{score.value}</strong>
+                </div>
+                <p>{score.caption}</p>
+                <meter min="0" max="100" value={score.value}>
+                  {score.value}
+                </meter>
+              </article>
+            ))}
+          </section>
+
+          <section className="report-panel badge-panel" aria-label="badges">
+            <div className="report-panel-title">
+              <Trophy aria-hidden="true" />
+              <span>解锁徽章</span>
+            </div>
+            <div className="badge-row">
+              {practiceReport.badges.map((badge) => (
+                <span key={badge}>{badge}</span>
+              ))}
+            </div>
+          </section>
+
+          <section className="report-panel metrics-panel" aria-label="learning metrics">
+            <div className="report-panel-title">
+              <Target aria-hidden="true" />
+              <span>量化反馈</span>
+            </div>
+            <div className="metric-grid">
+              <div>
+                <span>用户轮次</span>
+                <strong>{practiceReport.metrics.user_turns}</strong>
+              </div>
+              <div>
+                <span>英文词数</span>
+                <strong>{practiceReport.metrics.word_count}</strong>
+              </div>
+              <div>
+                <span>平均长度</span>
+                <strong>{practiceReport.metrics.average_words_per_user_turn}</strong>
+              </div>
+              <div>
+                <span>目标命中</span>
+                <strong>{practiceReport.metrics.target_expression_hits.length}</strong>
+              </div>
+            </div>
+            {practiceReport.metrics.llm_error ? (
+              <div className="message-bar error">
+                <AlertCircle aria-hidden="true" />
+                <span>LLM 兜底：{practiceReport.metrics.llm_error}</span>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="report-panel strengths-panel" aria-label="strengths">
+            <div className="report-panel-title">
+              <CheckCircle2 aria-hidden="true" />
+              <span>本局优势</span>
+            </div>
+            <div className="insight-list">
+              {practiceReport.strengths.map((strength) => (
+                <p key={strength}>{strength}</p>
+              ))}
+            </div>
+          </section>
+
+          <section className="report-panel corrections-panel" aria-label="corrections">
+            <div className="report-panel-title">
+              <ShieldCheck aria-hidden="true" />
+              <span>表达纠错</span>
+            </div>
+            <div className="correction-list">
+              {practiceReport.corrections.map((correction) => (
+                <article className={`correction-card ${correction.severity}`} key={`${correction.original}-${correction.suggestion}`}>
+                  <span>{correction.severity.toUpperCase()}</span>
+                  <strong>{correction.original}</strong>
+                  <p>{correction.suggestion}</p>
+                  <small>{correction.reason}</small>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="report-panel drills-panel" aria-label="review drills">
+            <div className="report-panel-title">
+              <Star aria-hidden="true" />
+              <span>复练任务</span>
+            </div>
+            <div className="drill-list">
+              {practiceReport.drills.map((drill, index) => (
+                <article className="drill-card" key={`${drill.title}-${drill.target_expression}`}>
+                  <span>Quest {index + 1}</span>
+                  <strong>{drill.title}</strong>
+                  <p>{drill.prompt}</p>
+                  <small>{drill.target_expression}</small>
+                </article>
+              ))}
+            </div>
+          </section>
+        </section>
+      </main>
+    );
   }
 
   if (view === "room" && createdSession && activeScenario) {
@@ -729,6 +977,34 @@ function App() {
                   </article>
                 ))
               )}
+            </div>
+
+            {reportError ? (
+              <div className="message-bar error">
+                <AlertCircle aria-hidden="true" />
+                <span>{reportError}</span>
+              </div>
+            ) : null}
+
+            <div className="report-action-row">
+              <button
+                className="report-action standard"
+                disabled={isGeneratingReport}
+                onClick={() => void generateReport("standard")}
+                type="button"
+              >
+                {isGeneratingReport ? <Loader2 className="spin" aria-hidden="true" /> : <Trophy aria-hidden="true" />}
+                <span>生成标准报告</span>
+              </button>
+              <button
+                className="report-action advanced"
+                disabled={isGeneratingReport}
+                onClick={() => void generateReport("advanced")}
+                type="button"
+              >
+                {isGeneratingReport ? <Loader2 className="spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
+                <span>生成进阶报告</span>
+              </button>
             </div>
 
             <div className="room-footer-strip">
