@@ -27,6 +27,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { GeminiLiveAudioSession, type GeminiLiveToken, type GeminiTranscriptEvent } from "./gemini-live";
 import "./styles.css";
 
 type Difficulty = "a2" | "b1" | "b2";
@@ -71,15 +72,6 @@ type RealtimeClientSecret = {
   expires_at: number | null;
   model: string;
   voice: string;
-};
-
-type GeminiLiveToken = {
-  session_id: string;
-  token: string;
-  expire_time: string | null;
-  new_session_expire_time: string | null;
-  model: string;
-  api_version: string;
 };
 
 type RealtimeEvent = {
@@ -160,7 +152,7 @@ const realtimeStatusLabels: Record<RealtimeStatus, { label: string; hint: string
 
 const voiceProviderOptions: Array<{ id: VoiceProvider; label: string; caption: string }> = [
   { id: "openai", label: "OpenAI Realtime", caption: "WebRTC 语音" },
-  { id: "gemini", label: "Gemini Live", caption: "免费层备选" },
+  { id: "gemini", label: "Gemini Live", caption: "WebSocket 音频" },
 ];
 
 function App() {
@@ -181,6 +173,7 @@ function App() {
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
+  const geminiSessionRef = useRef<GeminiLiveAudioSession | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const savedEventIdsRef = useRef<Set<string>>(new Set());
@@ -281,6 +274,8 @@ function App() {
   function closeRealtimeConnection(nextStatus: RealtimeStatus) {
     dataChannelRef.current?.close();
     dataChannelRef.current = null;
+    geminiSessionRef.current?.close();
+    geminiSessionRef.current = null;
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -503,7 +498,11 @@ function App() {
     }
   }
 
-  async function checkGeminiLiveToken() {
+  function handleGeminiTranscript(event: GeminiTranscriptEvent) {
+    void saveConversationTurn(event.role, event.text, event.eventId);
+  }
+
+  async function startGeminiLiveConversation() {
     if (!createdSession) {
       return;
     }
@@ -524,11 +523,37 @@ function App() {
         throw new Error(payload?.detail ?? "Gemini Live token 创建失败");
       }
       const gemini = (await tokenResponse.json()) as GeminiLiveToken;
-      setRealtimeStatus("ready");
-      setRoomNotice(`Gemini Live token 已就绪：${gemini.model}，下一步可接 AudioWorklet 音频流`);
+      setRoomNotice(`Gemini Live token 已就绪：${gemini.model}，正在打开音频流`);
+
+      const liveSession = new GeminiLiveAudioSession(gemini, {
+        onListening: () => {
+          setRealtimeStatus("listening");
+        },
+        onSpeaking: () => {
+          setRealtimeStatus("speaking");
+          setRoomNotice("Gemini Coach 正在回复");
+        },
+        onTurnComplete: () => {
+          setRealtimeStatus("listening");
+          setRoomNotice("轮到你继续表达");
+        },
+        onInterrupted: () => {
+          setRealtimeStatus("listening");
+          setRoomNotice("已检测到插话，Gemini 正在重新聆听");
+        },
+        onTranscript: handleGeminiTranscript,
+        onNotice: setRoomNotice,
+        onError: (liveError) => {
+          closeRealtimeConnection("error");
+          setRoomError(liveError.message);
+          setRoomNotice("Gemini Live 暂不可用，可以切回 OpenAI Realtime 继续演示");
+        },
+      });
+      geminiSessionRef.current = liveSession;
+      await liveSession.start();
     } catch (connectError) {
       closeRealtimeConnection("error");
-      setRoomError(connectError instanceof Error ? connectError.message : "Gemini Live token 创建失败");
+      setRoomError(connectError instanceof Error ? connectError.message : "Gemini Live 音频连接失败");
       setRoomNotice("Gemini Live 暂不可用，可以切回 OpenAI Realtime 继续演示");
     } finally {
       setIsConnectingRealtime(false);
@@ -537,7 +562,7 @@ function App() {
 
   function startSelectedVoiceProvider() {
     if (voiceProvider === "gemini") {
-      void checkGeminiLiveToken();
+      void startGeminiLiveConversation();
       return;
     }
     void startRealtimeConversation();
@@ -609,7 +634,7 @@ function App() {
                 type="button"
               >
                 {isConnectingRealtime ? <Loader2 className="spin" aria-hidden="true" /> : <Mic aria-hidden="true" />}
-                <span>{isConnectingRealtime ? "连接中" : voiceProvider === "gemini" ? "验证 Gemini" : "开始语音"}</span>
+                <span>{isConnectingRealtime ? "连接中" : voiceProvider === "gemini" ? "开始 Gemini" : "开始语音"}</span>
               </button>
               <button
                 className="ghost-voice-button"
@@ -639,7 +664,7 @@ function App() {
                     setRoomError("");
                     setRoomNotice(
                       provider.id === "gemini"
-                        ? "Gemini Live 作为备用 Provider，先验证临时 token"
+                        ? "Gemini Live 将使用 WebSocket 音频流"
                         : "OpenAI Realtime 将使用 WebRTC 语音链路",
                     );
                   }}

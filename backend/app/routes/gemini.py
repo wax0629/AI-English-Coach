@@ -59,6 +59,8 @@ def build_gemini_live_token_config(
                     },
                 ],
             },
+            "inputAudioTranscription": {},
+            "outputAudioTranscription": {},
         },
     }
 

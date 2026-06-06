@@ -91,6 +91,8 @@ async def test_gemini_live_token_uses_session_constraints(monkeypatch: pytest.Mo
     assert setup["model"] == "models/gemini-3.1-flash-live-preview"
     assert setup["generationConfig"]["responseModalities"] == ["AUDIO"]
     assert setup["generationConfig"]["temperature"] == 0.7
+    assert setup["inputAudioTranscription"] == {}
+    assert setup["outputAudioTranscription"] == {}
 
     instruction_text = setup["systemInstruction"]["parts"][0]["text"]
     assert "Hiring Manager" in instruction_text
