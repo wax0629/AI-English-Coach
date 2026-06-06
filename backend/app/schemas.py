@@ -77,3 +77,61 @@ class ConversationTurnResponse(BaseModel):
     started_at: datetime | None
     ended_at: datetime | None
     created_at: datetime
+
+
+ReportLevel = Literal["standard", "advanced"]
+
+
+class CreatePracticeReportRequest(BaseModel):
+    report_level: ReportLevel = "standard"
+
+
+class ReportScores(BaseModel):
+    overall: int = Field(ge=0, le=100)
+    fluency: int = Field(ge=0, le=100)
+    grammar: int = Field(ge=0, le=100)
+    vocabulary: int = Field(ge=0, le=100)
+    goal_completion: int = Field(ge=0, le=100)
+
+
+class ReportMetrics(BaseModel):
+    report_level: ReportLevel = "standard"
+    total_turns: int = Field(ge=0)
+    user_turns: int = Field(ge=0)
+    assistant_turns: int = Field(ge=0)
+    word_count: int = Field(ge=0)
+    average_words_per_user_turn: float = Field(ge=0)
+    target_expression_hits: list[str]
+    missed_target_expressions: list[str]
+    generation_mode: Literal["rules", "llm"]
+    llm_provider: Literal["rules", "gemini", "deepseek"]
+    llm_model: str | None = None
+    llm_error: str | None = None
+
+
+class ReportCorrection(BaseModel):
+    original: str
+    suggestion: str
+    reason: str
+    severity: Literal["low", "medium", "high"]
+
+
+class ReportDrill(BaseModel):
+    title: str
+    prompt: str
+    target_expression: str
+
+
+class PracticeReportResponse(BaseModel):
+    report_id: str
+    session_id: str
+    scenario_id: str
+    difficulty: Difficulty
+    generated_at: datetime
+    summary: str
+    scores: ReportScores
+    metrics: ReportMetrics
+    badges: list[str]
+    strengths: list[str]
+    corrections: list[ReportCorrection]
+    drills: list[ReportDrill]
