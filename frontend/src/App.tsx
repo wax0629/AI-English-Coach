@@ -28,6 +28,7 @@ import type { LucideIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GeminiLiveAudioSession, type GeminiLiveToken, type GeminiTranscriptEvent } from "./gemini-live";
+import { convertRecordingToAzureWav, type PronunciationAssessment } from "./pronunciation";
 import "./styles.css";
 
 type Difficulty = "a2" | "b1" | "b2";
@@ -35,6 +36,7 @@ type AppView = "map" | "room" | "report";
 type VoiceProvider = "openai" | "gemini";
 type RealtimeStatus = "idle" | "connecting" | "ready" | "listening" | "speaking" | "ended" | "error";
 type ReportLevel = "standard" | "advanced";
+type PronunciationStatus = "idle" | "recording" | "assessing" | "done" | "error";
 
 type Scenario = {
   id: string;
@@ -272,13 +274,20 @@ function App() {
   const [practiceReport, setPracticeReport] = useState<PracticeReport | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("idle");
   const [voiceProvider, setVoiceProvider] = useState<VoiceProvider>("openai");
+  const [pronunciationResults, setPronunciationResults] = useState<Record<string, PronunciationAssessment>>({});
+  const [pronunciationStatuses, setPronunciationStatuses] = useState<Record<string, PronunciationStatus>>({});
+  const [pronunciationErrors, setPronunciationErrors] = useState<Record<string, string>>({});
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const geminiSessionRef = useRef<GeminiLiveAudioSession | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const pronunciationRecorderRef = useRef<MediaRecorder | null>(null);
+  const pronunciationStreamRef = useRef<MediaStream | null>(null);
+  const pronunciationChunksRef = useRef<Blob[]>([]);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const savedEventIdsRef = useRef<Set<string>>(new Set());
+  const saveTurnQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     let ignore = false;
@@ -321,6 +330,7 @@ function App() {
   useEffect(() => {
     return () => {
       closeRealtimeConnection("ended");
+      stopPronunciationCapture();
     };
   }, []);
 
@@ -371,6 +381,7 @@ function App() {
     setCreatedSession(null);
     setTurns([]);
     setPracticeReport(null);
+    resetPronunciationState();
     setError("");
     setReportError("");
   }
@@ -389,6 +400,24 @@ function App() {
     }
     setIsConnectingRealtime(false);
     setRealtimeStatus(nextStatus);
+  }
+
+  function stopPronunciationCapture() {
+    if (pronunciationRecorderRef.current?.state === "recording") {
+      pronunciationRecorderRef.current.onstop = null;
+      pronunciationRecorderRef.current.stop();
+    }
+    pronunciationRecorderRef.current = null;
+    pronunciationStreamRef.current?.getTracks().forEach((track) => track.stop());
+    pronunciationStreamRef.current = null;
+    pronunciationChunksRef.current = [];
+  }
+
+  function resetPronunciationState() {
+    stopPronunciationCapture();
+    setPronunciationResults({});
+    setPronunciationStatuses({});
+    setPronunciationErrors({});
   }
 
   async function createSession() {
@@ -414,9 +443,11 @@ function App() {
       }
       const data = (await response.json()) as CreatedSession;
       savedEventIdsRef.current.clear();
+      saveTurnQueueRef.current = Promise.resolve();
       setCreatedSession(data);
       setTurns([]);
       setPracticeReport(null);
+      resetPronunciationState();
       setRealtimeStatus("idle");
       setRoomNotice("副本已锁定，等待语音链路启动");
       setView("room");
@@ -461,6 +492,11 @@ function App() {
     }
   }
 
+  function queueConversationTurn(role: ConversationRole, text: string, eventId: string) {
+    saveTurnQueueRef.current = saveTurnQueueRef.current.then(() => saveConversationTurn(role, text, eventId));
+    void saveTurnQueueRef.current;
+  }
+
   function readRealtimeTranscript(event: RealtimeEvent) {
     return event.transcript ?? event.text ?? "";
   }
@@ -487,11 +523,11 @@ function App() {
 
     if (eventType === "conversation.item.input_audio_transcription.completed") {
       const eventId = event.item_id ?? `${eventType}:${Date.now()}`;
-      void saveConversationTurn("user", readRealtimeTranscript(event), eventId);
+      queueConversationTurn("user", readRealtimeTranscript(event), eventId);
     }
     if (eventType === "response.audio_transcript.done" || eventType === "response.output_audio_transcript.done") {
       const eventId = event.response_id ?? event.item_id ?? `${eventType}:${Date.now()}`;
-      void saveConversationTurn("assistant", readRealtimeTranscript(event), eventId);
+      queueConversationTurn("assistant", readRealtimeTranscript(event), eventId);
     }
   }
 
@@ -604,7 +640,7 @@ function App() {
   }
 
   function handleGeminiTranscript(event: GeminiTranscriptEvent) {
-    void saveConversationTurn(event.role, event.text, event.eventId);
+    queueConversationTurn(event.role, event.text, event.eventId);
   }
 
   async function startGeminiLiveConversation() {
@@ -696,6 +732,7 @@ function App() {
       }
 
       const report = (await response.json()) as PracticeReport;
+      resetPronunciationState();
       setPracticeReport(report);
       setView("report");
       window.requestAnimationFrame(() => {
@@ -710,8 +747,125 @@ function App() {
     }
   }
 
+  function drillKey(drill: PracticeReport["drills"][number], index: number) {
+    return `${index}:${drill.title}:${drill.target_expression}`;
+  }
+
+  function updatePronunciationStatus(key: string, statusValue: PronunciationStatus) {
+    setPronunciationStatuses((current) => ({ ...current, [key]: statusValue }));
+  }
+
+  function updatePronunciationError(key: string, message: string) {
+    setPronunciationErrors((current) => ({ ...current, [key]: message }));
+  }
+
+  function describeRecordingError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const name = error instanceof DOMException ? error.name : "";
+    if (name === "NotAllowedError" || /permission denied/i.test(message)) {
+      return "麦克风权限被拒绝，请在浏览器地址栏允许 microphone 后重试";
+    }
+    if (name === "NotFoundError" || /requested device not found/i.test(message)) {
+      return "没有检测到可用麦克风，请连接麦克风后重试";
+    }
+    return message || "无法启动麦克风录音";
+  }
+
+  async function submitPronunciationRecording(key: string, referenceText: string, blob: Blob) {
+    if (!createdSession) {
+      return;
+    }
+
+    try {
+      updatePronunciationStatus(key, "assessing");
+      updatePronunciationError(key, "");
+      const audio = await convertRecordingToAzureWav(blob);
+      const response = await fetch(`${apiBaseUrl}/api/pronunciation/assess`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: createdSession.session_id,
+          reference_text: referenceText,
+          audio_base64: audio.audioBase64,
+          content_type: audio.contentType,
+          language: "en-US",
+        }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail ?? "发音评测失败");
+      }
+
+      const assessment = (await response.json()) as PronunciationAssessment;
+      setPronunciationResults((current) => ({ ...current, [key]: assessment }));
+      updatePronunciationStatus(key, "done");
+    } catch (assessmentError) {
+      updatePronunciationStatus(key, "error");
+      updatePronunciationError(key, assessmentError instanceof Error ? assessmentError.message : "发音评测失败");
+    } finally {
+      stopPronunciationCapture();
+    }
+  }
+
+  async function startPronunciationRecording(key: string, referenceText: string) {
+    if (pronunciationRecorderRef.current?.state === "recording") {
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      updatePronunciationStatus(key, "error");
+      updatePronunciationError(key, "当前浏览器不支持录音评测");
+      return;
+    }
+
+    try {
+      updatePronunciationStatus(key, "recording");
+      updatePronunciationError(key, "");
+      pronunciationChunksRef.current = [];
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+        video: false,
+      });
+      pronunciationStreamRef.current = stream;
+      const recorder = new MediaRecorder(stream);
+      pronunciationRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          pronunciationChunksRef.current.push(event.data);
+        }
+      };
+      recorder.onerror = () => {
+        updatePronunciationStatus(key, "error");
+        updatePronunciationError(key, "录音过程中出现错误");
+        stopPronunciationCapture();
+      };
+      recorder.onstop = () => {
+        const recording = new Blob(pronunciationChunksRef.current, {
+          type: recorder.mimeType || "audio/webm",
+        });
+        void submitPronunciationRecording(key, referenceText, recording);
+      };
+
+      recorder.start();
+    } catch (recordError) {
+      stopPronunciationCapture();
+      updatePronunciationStatus(key, "error");
+      updatePronunciationError(key, describeRecordingError(recordError));
+    }
+  }
+
+  function stopPronunciationRecording() {
+    if (pronunciationRecorderRef.current?.state === "recording") {
+      pronunciationRecorderRef.current.stop();
+    }
+  }
+
   function returnToMap() {
     closeRealtimeConnection("ended");
+    stopPronunciationCapture();
     setView("map");
     setRoomError("");
   }
@@ -855,14 +1009,73 @@ function App() {
               <span>复练任务</span>
             </div>
             <div className="drill-list">
-              {practiceReport.drills.map((drill, index) => (
-                <article className="drill-card" key={`${drill.title}-${drill.target_expression}`}>
-                  <span>Quest {index + 1}</span>
-                  <strong>{drill.title}</strong>
-                  <p>{drill.prompt}</p>
-                  <small>{drill.target_expression}</small>
-                </article>
-              ))}
+              {practiceReport.drills.map((drill, index) => {
+                const key = drillKey(drill, index);
+                const pronunciationStatus = pronunciationStatuses[key] ?? "idle";
+                const pronunciationResult = pronunciationResults[key];
+                const pronunciationError = pronunciationErrors[key];
+                const isRecording = pronunciationStatus === "recording";
+                const isAssessing = pronunciationStatus === "assessing";
+
+                return (
+                  <article className="drill-card" key={key}>
+                    <span>Quest {index + 1}</span>
+                    <strong>{drill.title}</strong>
+                    <p>{drill.prompt}</p>
+                    <small>{drill.target_expression}</small>
+
+                    <button
+                      className={`pronunciation-button ${pronunciationStatus}`}
+                      disabled={isAssessing}
+                      onClick={() => {
+                        if (isRecording) {
+                          stopPronunciationRecording();
+                          return;
+                        }
+                        void startPronunciationRecording(key, drill.target_expression);
+                      }}
+                      type="button"
+                    >
+                      {isAssessing ? (
+                        <Loader2 className="spin" aria-hidden="true" />
+                      ) : isRecording ? (
+                        <CircleStop aria-hidden="true" />
+                      ) : (
+                        <Mic2 aria-hidden="true" />
+                      )}
+                      <span>{isAssessing ? "评测中" : isRecording ? "停止录音" : "录音评测"}</span>
+                    </button>
+
+                    {pronunciationError ? (
+                      <div className="pronunciation-error">
+                        <AlertCircle aria-hidden="true" />
+                        <span>{pronunciationError}</span>
+                      </div>
+                    ) : null}
+
+                    {pronunciationResult ? (
+                      <div className="pronunciation-result" aria-label="pronunciation result">
+                        <div className="pronunciation-scoreline">
+                          <strong>{pronunciationResult.scores.pronunciation}</strong>
+                          <span>{pronunciationResult.feedback.message}</span>
+                        </div>
+                        <div className="pronunciation-score-grid">
+                          <span>准确 {pronunciationResult.scores.accuracy}</span>
+                          <span>流利 {pronunciationResult.scores.fluency}</span>
+                          <span>完整 {pronunciationResult.scores.completeness}</span>
+                        </div>
+                        <div className="word-score-list">
+                          {pronunciationResult.words.slice(0, 8).map((word, wordIndex) => (
+                            <span className={word.accuracy < 70 ? "needs-work" : ""} key={`${word.word}-${wordIndex}`}>
+                              {word.word} {word.accuracy}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
             </div>
           </section>
         </section>

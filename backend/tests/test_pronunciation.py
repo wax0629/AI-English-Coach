@@ -1,0 +1,229 @@
+import base64
+import json
+
+import httpx
+import pytest
+
+from app.config import Settings
+from app.database import init_db
+from app.dependencies import get_app_settings
+from app.main import app
+from app.pronunciation import build_pronunciation_assessment_header, parse_azure_pronunciation_response
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+def ensure_database() -> None:
+    init_db()
+    app.dependency_overrides.clear()
+    yield
+    app.dependency_overrides.clear()
+
+
+async def create_practice_session(client: httpx.AsyncClient) -> str:
+    response = await client.post(
+        "/api/sessions",
+        json={"scenario_id": "restaurant", "difficulty": "a2", "user_id": "demo"},
+    )
+
+    assert response.status_code == 201
+    return str(response.json()["session_id"])
+
+
+def test_build_pronunciation_assessment_header_contains_reference_text() -> None:
+    header = build_pronunciation_assessment_header("Could I have some water?")
+    decoded = json.loads(base64.b64decode(header).decode("utf-8"))
+
+    assert decoded["ReferenceText"] == "Could I have some water?"
+    assert decoded["GradingSystem"] == "HundredMark"
+    assert decoded["Granularity"] == "Phoneme"
+    assert decoded["EnableMiscue"] is True
+
+
+def test_parse_azure_pronunciation_response_normalizes_scores_and_words() -> None:
+    result = parse_azure_pronunciation_response(
+        {
+            "RecognitionStatus": "Success",
+            "DisplayText": "Could I have some water?",
+            "NBest": [
+                {
+                    "Display": "Could I have some water?",
+                    "PronunciationAssessment": {
+                        "PronScore": 86.4,
+                        "AccuracyScore": 82.2,
+                        "FluencyScore": 91.7,
+                        "CompletenessScore": 88.1,
+                        "ProsodyScore": 79.5,
+                    },
+                    "Words": [
+                        {
+                            "Word": "Could",
+                            "PronunciationAssessment": {"AccuracyScore": 74.4, "ErrorType": "None"},
+                        },
+                        {
+                            "Word": "water",
+                            "PronunciationAssessment": {"AccuracyScore": 58.2, "ErrorType": "Mispronunciation"},
+                        },
+                    ],
+                }
+            ],
+        },
+        session_id="session-1",
+        reference_text="Could I have some water?",
+    )
+
+    assert result["scores"] == {
+        "pronunciation": 86,
+        "accuracy": 82,
+        "fluency": 92,
+        "completeness": 88,
+        "prosody": 80,
+    }
+    assert result["recognized_text"] == "Could I have some water?"
+    assert result["words"][1] == {"word": "water", "accuracy": 58, "error_type": "Mispronunciation"}
+    assert result["feedback"]["level"] == "good"
+
+
+@pytest.mark.anyio
+async def test_pronunciation_assessment_requires_azure_config() -> None:
+    app.dependency_overrides[get_app_settings] = lambda: Settings(AZURE_SPEECH_KEY="", AZURE_SPEECH_REGION="")
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        session_id = await create_practice_session(client)
+        response = await client.post(
+            "/api/pronunciation/assess",
+            json={
+                "session_id": session_id,
+                "reference_text": "Could I have some water?",
+                "audio_base64": base64.b64encode(b"fake-wav").decode("ascii"),
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "AZURE_SPEECH_KEY and AZURE_SPEECH_REGION are required"
+
+
+@pytest.mark.anyio
+async def test_pronunciation_assessment_rejects_unknown_session() -> None:
+    app.dependency_overrides[get_app_settings] = lambda: Settings(
+        AZURE_SPEECH_KEY="azure-test-key",
+        AZURE_SPEECH_REGION="eastus",
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/pronunciation/assess",
+            json={
+                "session_id": "missing-session",
+                "reference_text": "Could I have some water?",
+                "audio_base64": base64.b64encode(b"fake-wav").decode("ascii"),
+            },
+        )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Unknown session_id: missing-session"
+
+
+@pytest.mark.anyio
+async def test_pronunciation_assessment_rejects_invalid_audio_base64() -> None:
+    app.dependency_overrides[get_app_settings] = lambda: Settings(
+        AZURE_SPEECH_KEY="azure-test-key",
+        AZURE_SPEECH_REGION="eastus",
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        session_id = await create_practice_session(client)
+        response = await client.post(
+            "/api/pronunciation/assess",
+            json={
+                "session_id": session_id,
+                "reference_text": "Could I have some water?",
+                "audio_base64": "not-valid-base64",
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "audio_base64 must be valid base64"
+
+
+@pytest.mark.anyio
+async def test_pronunciation_assessment_returns_scores(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_request: dict[str, object] = {}
+    app.dependency_overrides[get_app_settings] = lambda: Settings(
+        AZURE_SPEECH_KEY="azure-test-key",
+        AZURE_SPEECH_REGION="eastus",
+    )
+
+    async def fake_request_azure_pronunciation(
+        settings: Settings,
+        reference_text: str,
+        audio_bytes: bytes,
+        content_type: str,
+        language: str,
+    ) -> dict[str, object]:
+        captured_request.update(
+            {
+                "reference_text": reference_text,
+                "audio_bytes": audio_bytes,
+                "content_type": content_type,
+                "language": language,
+                "region": settings.azure_speech_region,
+            }
+        )
+        return {
+            "RecognitionStatus": "Success",
+            "DisplayText": "Could I have some water?",
+            "NBest": [
+                {
+                    "PronunciationAssessment": {
+                        "PronScore": 92.0,
+                        "AccuracyScore": 90.0,
+                        "FluencyScore": 95.0,
+                        "CompletenessScore": 91.0,
+                    },
+                    "Words": [
+                        {
+                            "Word": "Could",
+                            "PronunciationAssessment": {"AccuracyScore": 90.0, "ErrorType": "None"},
+                        }
+                    ],
+                }
+            ],
+        }
+
+    monkeypatch.setattr("app.routes.pronunciation.request_azure_pronunciation", fake_request_azure_pronunciation)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        session_id = await create_practice_session(client)
+        response = await client.post(
+            "/api/pronunciation/assess",
+            json={
+                "session_id": session_id,
+                "reference_text": "Could I have some water?",
+                "audio_base64": base64.b64encode(b"fake-wav").decode("ascii"),
+                "content_type": "audio/wav",
+                "language": "en-US",
+            },
+        )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["session_id"] == session_id
+    assert payload["reference_text"] == "Could I have some water?"
+    assert payload["scores"]["pronunciation"] == 92
+    assert payload["words"][0]["word"] == "Could"
+    assert captured_request == {
+        "reference_text": "Could I have some water?",
+        "audio_bytes": b"fake-wav",
+        "content_type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+        "language": "en-US",
+        "region": "eastus",
+    }
