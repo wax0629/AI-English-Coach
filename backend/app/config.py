@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     gemini_live_model: str = Field(
-        default="gemini-2.5-flash-native-audio-preview-12-2025",
+        default="gemini-3.1-flash-live-preview",
         alias="GEMINI_LIVE_MODEL",
     )
     azure_speech_key: str = Field(default="", alias="AZURE_SPEECH_KEY")

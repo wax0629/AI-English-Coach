@@ -48,7 +48,7 @@ async def test_gemini_live_token_uses_session_constraints(monkeypatch: pytest.Mo
     captured_config: dict[str, object] = {}
     app.dependency_overrides[get_app_settings] = lambda: Settings(
         GEMINI_API_KEY="gemini-test-key",
-        GEMINI_LIVE_MODEL="gemini-2.5-flash-native-audio-preview-12-2025",
+        GEMINI_LIVE_MODEL="gemini-3.1-flash-live-preview",
     )
 
     async def fake_request_gemini_live_token(
@@ -79,7 +79,7 @@ async def test_gemini_live_token_uses_session_constraints(monkeypatch: pytest.Mo
         "token": "auth_tokens/gemini_ephemeral",
         "expire_time": "2026-06-06T02:30:00Z",
         "new_session_expire_time": "2026-06-06T02:01:00Z",
-        "model": "gemini-2.5-flash-native-audio-preview-12-2025",
+        "model": "gemini-3.1-flash-live-preview",
         "api_version": "v1alpha",
     }
 
@@ -88,7 +88,7 @@ async def test_gemini_live_token_uses_session_constraints(monkeypatch: pytest.Mo
     assert "newSessionExpireTime" in captured_config
 
     setup = captured_config["bidiGenerateContentSetup"]
-    assert setup["model"] == "models/gemini-2.5-flash-native-audio-preview-12-2025"
+    assert setup["model"] == "models/gemini-3.1-flash-live-preview"
     assert setup["generationConfig"]["responseModalities"] == ["AUDIO"]
     assert setup["generationConfig"]["temperature"] == 0.7
 
@@ -102,7 +102,7 @@ async def test_gemini_live_token_accepts_model_resource_name(monkeypatch: pytest
     captured_config: dict[str, object] = {}
     app.dependency_overrides[get_app_settings] = lambda: Settings(
         GEMINI_API_KEY="gemini-test-key",
-        GEMINI_LIVE_MODEL="models/gemini-2.5-flash-native-audio-preview-12-2025",
+        GEMINI_LIVE_MODEL="models/gemini-3.1-flash-live-preview",
     )
 
     async def fake_request_gemini_live_token(
@@ -124,7 +124,7 @@ async def test_gemini_live_token_accepts_model_resource_name(monkeypatch: pytest
 
     assert response.status_code == 201
     setup = captured_config["bidiGenerateContentSetup"]
-    assert setup["model"] == "models/gemini-2.5-flash-native-audio-preview-12-2025"
+    assert setup["model"] == "models/gemini-3.1-flash-live-preview"
 
 
 @pytest.mark.anyio
