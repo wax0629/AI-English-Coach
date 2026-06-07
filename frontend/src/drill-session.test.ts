@@ -113,4 +113,26 @@ describe("drill session state", () => {
       { action: "开始复练", label: "需要重试" },
     ]);
   });
+
+  it("does not treat unavailable Azure assessment as a real zero score", () => {
+    const key = createDrillKey(drills[0], 0);
+    const unavailableAssessment = assessment(0);
+    unavailableAssessment.feedback = {
+      level: "assessment_unavailable",
+      message: "Azure 已识别到英文，但没有返回发音评分。",
+    };
+    const state = buildDrillSessionState({
+      drills: drills.slice(0, 1),
+      activeKey: key,
+      passingScore: 75,
+      results: {
+        [key]: unavailableAssessment,
+      },
+      statuses: { [key]: "done" },
+    });
+
+    expect(state.bestScore).toBe(0);
+    expect(state.cards[0].score).toBeNull();
+    expect(state.cards[0].actionLabel).toBe("开始复练");
+  });
 });

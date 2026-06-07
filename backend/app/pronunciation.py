@@ -53,6 +53,16 @@ def _score(value: object, default: int = 0) -> int:
     return default
 
 
+def _assessment_field(
+    assessment: dict[str, Any],
+    result: dict[str, Any],
+    key: str,
+) -> object:
+    if key in assessment:
+        return assessment.get(key)
+    return result.get(key)
+
+
 def _feedback_level(pronunciation_score: int) -> str:
     if pronunciation_score >= 90:
         return "excellent"
@@ -65,6 +75,7 @@ def _feedback_level(pronunciation_score: int) -> str:
 
 def _feedback_message(level: str) -> str:
     return {
+        "assessment_unavailable": "Azure 已识别到英文，但没有返回发音评分，请检查 Speech 资源区域是否支持发音评测后重试。",
         "excellent": "发音稳定自然，可以挑战更长句。",
         "good": "整体不错，重点打磨低分单词会更稳。",
         "needs_focus": "句子已完成，建议放慢语速并复练标记单词。",
@@ -78,6 +89,18 @@ def _looks_like_no_speech(recognized_text: str, pronunciation_score: int) -> boo
     return pronunciation_score == 0 and cleaned in {"", ".", "..."}
 
 
+def _looks_like_assessment_unavailable(
+    recognized_text: str,
+    scores: dict[str, int],
+    words: list[dict[str, object]],
+) -> bool:
+    if not recognized_text.strip():
+        return False
+    if any(score > 0 for score in scores.values()):
+        return False
+    return not words or all(int(word.get("accuracy", 0)) == 0 for word in words)
+
+
 def parse_azure_pronunciation_response(
     azure_payload: dict[str, Any],
     session_id: str,
@@ -88,7 +111,7 @@ def parse_azure_pronunciation_response(
     assessment = best_result.get("PronunciationAssessment") if isinstance(best_result, dict) else {}
     assessment = assessment if isinstance(assessment, dict) else {}
 
-    pronunciation_score = _score(assessment.get("PronScore"))
+    pronunciation_score = _score(_assessment_field(assessment, best_result, "PronScore"))
     recognized_text = str(
         best_result.get("Display")
         or best_result.get("DisplayText")
@@ -97,10 +120,10 @@ def parse_azure_pronunciation_response(
     )
     scores = {
         "pronunciation": pronunciation_score,
-        "accuracy": _score(assessment.get("AccuracyScore")),
-        "fluency": _score(assessment.get("FluencyScore")),
-        "completeness": _score(assessment.get("CompletenessScore")),
-        "prosody": _score(assessment.get("ProsodyScore")),
+        "accuracy": _score(_assessment_field(assessment, best_result, "AccuracyScore")),
+        "fluency": _score(_assessment_field(assessment, best_result, "FluencyScore")),
+        "completeness": _score(_assessment_field(assessment, best_result, "CompletenessScore")),
+        "prosody": _score(_assessment_field(assessment, best_result, "ProsodyScore")),
     }
     words: list[dict[str, object]] = []
     for word in best_result.get("Words", []) if isinstance(best_result, dict) else []:
@@ -111,12 +134,17 @@ def parse_azure_pronunciation_response(
         words.append(
             {
                 "word": str(word.get("Word", "")),
-                "accuracy": _score(word_assessment.get("AccuracyScore")),
-                "error_type": str(word_assessment.get("ErrorType", "None")),
+                "accuracy": _score(_assessment_field(word_assessment, word, "AccuracyScore")),
+                "error_type": str(_assessment_field(word_assessment, word, "ErrorType") or "None"),
             }
         )
 
-    level = "no_speech" if _looks_like_no_speech(recognized_text, pronunciation_score) else _feedback_level(pronunciation_score)
+    if _looks_like_no_speech(recognized_text, pronunciation_score):
+        level = "no_speech"
+    elif _looks_like_assessment_unavailable(recognized_text, scores, words):
+        level = "assessment_unavailable"
+    else:
+        level = _feedback_level(pronunciation_score)
     return {
         "session_id": session_id,
         "reference_text": reference_text,

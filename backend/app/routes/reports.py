@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.dependencies import get_app_settings, get_db
+from app.learner_profile import update_learner_profile_from_report
 from app.models import ConversationTurn, PracticeReport, PracticeSession
 from app.report_llm import enhance_report_payload
 from app.reporting import build_report_payload
@@ -97,6 +98,12 @@ async def generate_practice_report(
 
     practice_session.status = "finished"
     practice_session.finished_at = generated_at
+    update_learner_profile_from_report(
+        db,
+        user_id=practice_session.user_id,
+        report_payload=payload,
+        updated_at=generated_at,
+    )
     db.commit()
     db.refresh(report)
     return to_report_response(report)

@@ -15,10 +15,19 @@ export type PronunciationAssessment = {
     error_type: string;
   }>;
   feedback: {
-    level: "excellent" | "good" | "needs_focus" | "retry";
+    level: "excellent" | "good" | "needs_focus" | "retry" | "no_speech" | "assessment_unavailable";
     message: string;
   };
 };
+
+export function buildPronunciationDiagnostics(assessment: PronunciationAssessment) {
+  const recognizedText = assessment.recognized_text.trim() || "未识别到有效英文语音";
+
+  return {
+    referenceLabel: `评分句：${assessment.reference_text}`,
+    recognizedLabel: `Azure 听到：${recognizedText}`,
+  };
+}
 
 export type AzureReadyAudio = {
   audioBase64: string;

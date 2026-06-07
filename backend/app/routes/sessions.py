@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
-from app.models import PracticeSession
+from app.learner_profile import to_learner_profile_response
+from app.models import LearnerProfile, PracticeSession
 from app.scenarios import get_scenario, list_scenarios
 from app.schemas import CreateSessionRequest, ScenarioResponse, SessionResponse
 
@@ -46,4 +47,5 @@ def create_session(payload: CreateSessionRequest, db: Session = Depends(get_db))
         difficulty=payload.difficulty,
         status="active",
         created_at=session.created_at,
+        learner_profile=to_learner_profile_response(profile) if (profile := db.get(LearnerProfile, session.user_id)) else None,
     )
