@@ -1,5 +1,5 @@
 # AI English Coach
-
+demo演示视频链接：https://www.bilibili.com/video/BV1ZJEb6oEGk?vd_source=6f06d2bd1b7429af5b3816b9496a2749
 AI English Coach 是一款面向指定场景的 AI 英语口语陪练 MVP。它以“真实对话训练”为核心，让用户在求职面试、餐厅点餐、商务会议等场景中完成语音对话，并在课后获得量化报告、表达纠错、关键句复练和弱点记忆。
 
 项目目标不是做一个普通聊天机器人，而是形成一条可演示、可量化、可持续改进的口语训练闭环：
