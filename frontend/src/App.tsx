@@ -27,6 +27,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { buildDrillSessionState, createDrillKey, type DrillPracticeStatus } from "./drill-session";
 import { GeminiLiveAudioSession, type GeminiLiveToken, type GeminiTranscriptEvent } from "./gemini-live";
 import { convertRecordingToAzureWav, type PronunciationAssessment } from "./pronunciation";
 import "./styles.css";
@@ -36,7 +37,7 @@ type AppView = "map" | "room" | "report";
 type VoiceProvider = "openai" | "gemini";
 type RealtimeStatus = "idle" | "connecting" | "ready" | "listening" | "speaking" | "ended" | "error";
 type ReportLevel = "standard" | "advanced";
-type PronunciationStatus = "idle" | "recording" | "assessing" | "done" | "error";
+type PronunciationStatus = DrillPracticeStatus;
 
 type Scenario = {
   id: string;
@@ -143,6 +144,7 @@ type ScenarioMeta = {
 type AccentStyle = CSSProperties & { "--accent": string };
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+const drillPassingScore = 75;
 
 const scoreLabels: Array<{ key: keyof PracticeReport["scores"]; label: string; caption: string }> = [
   { key: "fluency", label: "流利度", caption: "节奏与连续表达" },
@@ -274,6 +276,7 @@ function App() {
   const [practiceReport, setPracticeReport] = useState<PracticeReport | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("idle");
   const [voiceProvider, setVoiceProvider] = useState<VoiceProvider>("openai");
+  const [activeDrillKey, setActiveDrillKey] = useState<string | null>(null);
   const [pronunciationResults, setPronunciationResults] = useState<Record<string, PronunciationAssessment>>({});
   const [pronunciationStatuses, setPronunciationStatuses] = useState<Record<string, PronunciationStatus>>({});
   const [pronunciationErrors, setPronunciationErrors] = useState<Record<string, string>>({});
@@ -415,6 +418,7 @@ function App() {
 
   function resetPronunciationState() {
     stopPronunciationCapture();
+    setActiveDrillKey(null);
     setPronunciationResults({});
     setPronunciationStatuses({});
     setPronunciationErrors({});
@@ -734,6 +738,7 @@ function App() {
       const report = (await response.json()) as PracticeReport;
       resetPronunciationState();
       setPracticeReport(report);
+      setActiveDrillKey(report.drills[0] ? createDrillKey(report.drills[0], 0) : null);
       setView("report");
       window.requestAnimationFrame(() => {
         window.scrollTo({ top: 0, behavior: "smooth" });
@@ -745,10 +750,6 @@ function App() {
     } finally {
       setIsGeneratingReport(false);
     }
-  }
-
-  function drillKey(drill: PracticeReport["drills"][number], index: number) {
-    return `${index}:${drill.title}:${drill.target_expression}`;
   }
 
   function updatePronunciationStatus(key: string, statusValue: PronunciationStatus) {
@@ -797,8 +798,20 @@ function App() {
       }
 
       const assessment = (await response.json()) as PronunciationAssessment;
-      setPronunciationResults((current) => ({ ...current, [key]: assessment }));
+      const nextResults = { ...pronunciationResults, [key]: assessment };
+      const nextStatuses = { ...pronunciationStatuses, [key]: "done" as PronunciationStatus };
+      setPronunciationResults(nextResults);
       updatePronunciationStatus(key, "done");
+      if (practiceReport) {
+        const drillSession = buildDrillSessionState({
+          activeKey: key,
+          drills: practiceReport.drills,
+          passingScore: drillPassingScore,
+          results: nextResults,
+          statuses: nextStatuses,
+        });
+        setActiveDrillKey(drillSession.activeKey);
+      }
     } catch (assessmentError) {
       updatePronunciationStatus(key, "error");
       updatePronunciationError(key, assessmentError instanceof Error ? assessmentError.message : "发音评测失败");
@@ -818,6 +831,7 @@ function App() {
     }
 
     try {
+      setActiveDrillKey(key);
       updatePronunciationStatus(key, "recording");
       updatePronunciationError(key, "");
       pronunciationChunksRef.current = [];
@@ -885,6 +899,14 @@ function App() {
       practiceReport.metrics.generation_mode === "llm"
         ? `${practiceReport.metrics.llm_provider} · ${practiceReport.metrics.llm_model}`
         : "Rules fallback";
+    const drillSession = buildDrillSessionState({
+      activeKey: activeDrillKey,
+      drills: practiceReport.drills,
+      passingScore: drillPassingScore,
+      results: pronunciationResults,
+      statuses: pronunciationStatuses,
+    });
+    const activeDrill = drillSession.cards.find((card) => card.active) ?? null;
 
     return (
       <main className="report-shell">
@@ -916,73 +938,79 @@ function App() {
             </div>
           </section>
 
-          <section className="score-grid" aria-label="score breakdown">
-            {scoreItems.map((score) => (
-              <article className="score-tile" key={score.key}>
-                <div>
-                  <span>{score.label}</span>
-                  <strong>{score.value}</strong>
+          <section className="report-main-grid" aria-label="report highlights">
+            <div className="report-stack">
+              <section className="score-grid" aria-label="score breakdown">
+                {scoreItems.map((score) => (
+                  <article className="score-tile" key={score.key}>
+                    <div>
+                      <span>{score.label}</span>
+                      <strong>{score.value}</strong>
+                    </div>
+                    <p>{score.caption}</p>
+                    <meter min="0" max="100" value={score.value}>
+                      {score.value}
+                    </meter>
+                  </article>
+                ))}
+              </section>
+
+              <section className="report-panel badge-panel" aria-label="badges">
+                <div className="report-panel-title">
+                  <Trophy aria-hidden="true" />
+                  <span>解锁徽章</span>
                 </div>
-                <p>{score.caption}</p>
-                <meter min="0" max="100" value={score.value}>
-                  {score.value}
-                </meter>
-              </article>
-            ))}
-          </section>
+                <div className="badge-row">
+                  {practiceReport.badges.map((badge) => (
+                    <span key={badge}>{badge}</span>
+                  ))}
+                </div>
+              </section>
+            </div>
 
-          <section className="report-panel badge-panel" aria-label="badges">
-            <div className="report-panel-title">
-              <Trophy aria-hidden="true" />
-              <span>解锁徽章</span>
-            </div>
-            <div className="badge-row">
-              {practiceReport.badges.map((badge) => (
-                <span key={badge}>{badge}</span>
-              ))}
-            </div>
-          </section>
+            <div className="report-stack">
+              <section className="report-panel metrics-panel" aria-label="learning metrics">
+                <div className="report-panel-title">
+                  <Target aria-hidden="true" />
+                  <span>量化反馈</span>
+                </div>
+                <div className="metric-grid">
+                  <div>
+                    <span>用户轮次</span>
+                    <strong>{practiceReport.metrics.user_turns}</strong>
+                  </div>
+                  <div>
+                    <span>英文词数</span>
+                    <strong>{practiceReport.metrics.word_count}</strong>
+                  </div>
+                  <div>
+                    <span>平均长度</span>
+                    <strong>{practiceReport.metrics.average_words_per_user_turn}</strong>
+                  </div>
+                  <div>
+                    <span>目标命中</span>
+                    <strong>{practiceReport.metrics.target_expression_hits.length}</strong>
+                  </div>
+                </div>
+                {practiceReport.metrics.llm_error ? (
+                  <div className="message-bar error">
+                    <AlertCircle aria-hidden="true" />
+                    <span>LLM 兜底：{practiceReport.metrics.llm_error}</span>
+                  </div>
+                ) : null}
+              </section>
 
-          <section className="report-panel metrics-panel" aria-label="learning metrics">
-            <div className="report-panel-title">
-              <Target aria-hidden="true" />
-              <span>量化反馈</span>
-            </div>
-            <div className="metric-grid">
-              <div>
-                <span>用户轮次</span>
-                <strong>{practiceReport.metrics.user_turns}</strong>
-              </div>
-              <div>
-                <span>英文词数</span>
-                <strong>{practiceReport.metrics.word_count}</strong>
-              </div>
-              <div>
-                <span>平均长度</span>
-                <strong>{practiceReport.metrics.average_words_per_user_turn}</strong>
-              </div>
-              <div>
-                <span>目标命中</span>
-                <strong>{practiceReport.metrics.target_expression_hits.length}</strong>
-              </div>
-            </div>
-            {practiceReport.metrics.llm_error ? (
-              <div className="message-bar error">
-                <AlertCircle aria-hidden="true" />
-                <span>LLM 兜底：{practiceReport.metrics.llm_error}</span>
-              </div>
-            ) : null}
-          </section>
-
-          <section className="report-panel strengths-panel" aria-label="strengths">
-            <div className="report-panel-title">
-              <CheckCircle2 aria-hidden="true" />
-              <span>本局优势</span>
-            </div>
-            <div className="insight-list">
-              {practiceReport.strengths.map((strength) => (
-                <p key={strength}>{strength}</p>
-              ))}
+              <section className="report-panel strengths-panel" aria-label="strengths">
+                <div className="report-panel-title">
+                  <CheckCircle2 aria-hidden="true" />
+                  <span>本局优势</span>
+                </div>
+                <div className="insight-list">
+                  {practiceReport.strengths.map((strength) => (
+                    <p key={strength}>{strength}</p>
+                  ))}
+                </div>
+              </section>
             </div>
           </section>
 
@@ -1003,14 +1031,48 @@ function App() {
             </div>
           </section>
 
-          <section className="report-panel drills-panel" aria-label="review drills">
-            <div className="report-panel-title">
+          <section className="report-panel drills-panel drill-command-panel" aria-label="review drills">
+            <div className="report-panel-title drill-title-row">
               <Star aria-hidden="true" />
               <span>复练任务</span>
+              <small>
+                {drillSession.completedCount} / {drillSession.totalCount} 已达标
+              </small>
             </div>
-            <div className="drill-list">
-              {practiceReport.drills.map((drill, index) => {
-                const key = drillKey(drill, index);
+
+            <div className="drill-command-board">
+              <div className="drill-command-copy">
+                <span>Retry Route</span>
+                <strong>{drillSession.progressPercent}% Clear</strong>
+                <p>{activeDrill ? activeDrill.target_expression : "等待生成复练句"}</p>
+              </div>
+              <div className="drill-progress-meter" aria-label={`复练进度 ${drillSession.progressPercent}%`}>
+                <span style={{ width: `${drillSession.progressPercent}%` }} />
+              </div>
+              <div className="drill-command-stats">
+                <div>
+                  <span>达标线</span>
+                  <strong>{drillPassingScore}</strong>
+                </div>
+                <div>
+                  <span>最佳分</span>
+                  <strong>{drillSession.bestScore || "--"}</strong>
+                </div>
+              </div>
+            </div>
+
+            {activeDrill ? (
+              <div className={`active-drill-focus ${activeDrill.tone}`}>
+                <span>Current Target</span>
+                <strong>{activeDrill.title}</strong>
+                <p>{activeDrill.prompt}</p>
+                <small>{activeDrill.focusWords.length > 0 ? `优先修正：${activeDrill.focusWords.join(" / ")}` : "保持语速稳定，注意重音和停顿"}</small>
+              </div>
+            ) : null}
+
+            <div className="drill-list drill-list-v2">
+              {drillSession.cards.map((card) => {
+                const key = card.key;
                 const pronunciationStatus = pronunciationStatuses[key] ?? "idle";
                 const pronunciationResult = pronunciationResults[key];
                 const pronunciationError = pronunciationErrors[key];
@@ -1018,33 +1080,47 @@ function App() {
                 const isAssessing = pronunciationStatus === "assessing";
 
                 return (
-                  <article className="drill-card" key={key}>
-                    <span>Quest {index + 1}</span>
-                    <strong>{drill.title}</strong>
-                    <p>{drill.prompt}</p>
-                    <small>{drill.target_expression}</small>
-
+                  <article className={`drill-card drill-card-v2 ${card.active ? "active" : ""} ${card.cleared ? "cleared" : ""} ${card.tone}`} key={key}>
                     <button
-                      className={`pronunciation-button ${pronunciationStatus}`}
-                      disabled={isAssessing}
-                      onClick={() => {
-                        if (isRecording) {
-                          stopPronunciationRecording();
-                          return;
-                        }
-                        void startPronunciationRecording(key, drill.target_expression);
-                      }}
+                      aria-pressed={card.active}
+                      className="drill-card-main"
+                      onClick={() => setActiveDrillKey(key)}
                       type="button"
                     >
-                      {isAssessing ? (
-                        <Loader2 className="spin" aria-hidden="true" />
-                      ) : isRecording ? (
-                        <CircleStop aria-hidden="true" />
-                      ) : (
-                        <Mic2 aria-hidden="true" />
-                      )}
-                      <span>{isAssessing ? "评测中" : isRecording ? "停止录音" : "录音评测"}</span>
+                      <span className="quest-chip">Quest {card.index + 1}</span>
+                      <span className={`drill-state-pill ${card.tone}`}>{card.statusLabel}</span>
+                      <strong>{card.title}</strong>
+                      <p>{card.prompt}</p>
+                      <small>{card.target_expression}</small>
                     </button>
+
+                    <div className="drill-card-actions">
+                      <button
+                        className={`pronunciation-button ${pronunciationStatus}`}
+                        disabled={isAssessing}
+                        onClick={() => {
+                          if (isRecording) {
+                            stopPronunciationRecording();
+                            return;
+                          }
+                          void startPronunciationRecording(key, card.target_expression);
+                        }}
+                        type="button"
+                      >
+                        {isAssessing ? (
+                          <Loader2 className="spin" aria-hidden="true" />
+                        ) : isRecording ? (
+                          <CircleStop aria-hidden="true" />
+                        ) : (
+                          <Mic2 aria-hidden="true" />
+                        )}
+                        <span>{card.actionLabel}</span>
+                      </button>
+                      <div className="drill-score-mini">
+                        <span>Last</span>
+                        <strong>{card.score ?? "--"}</strong>
+                      </div>
+                    </div>
 
                     {pronunciationError ? (
                       <div className="pronunciation-error">
@@ -1063,6 +1139,7 @@ function App() {
                           <span>准确 {pronunciationResult.scores.accuracy}</span>
                           <span>流利 {pronunciationResult.scores.fluency}</span>
                           <span>完整 {pronunciationResult.scores.completeness}</span>
+                          <span>韵律 {pronunciationResult.scores.prosody}</span>
                         </div>
                         <div className="word-score-list">
                           {pronunciationResult.words.slice(0, 8).map((word, wordIndex) => (
