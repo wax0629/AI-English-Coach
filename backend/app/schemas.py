@@ -116,6 +116,22 @@ class ConversationTurnResponse(BaseModel):
     created_at: datetime
 
 
+class DemoConversationResponse(BaseModel):
+    session_id: str
+    created: bool
+    turns: list[ConversationTurnResponse]
+
+
+class ServiceReadiness(BaseModel):
+    configured: bool
+    label: str
+    detail: str
+
+
+class ReadinessResponse(BaseModel):
+    services: dict[str, ServiceReadiness]
+
+
 ReportLevel = Literal["standard", "advanced"]
 
 
