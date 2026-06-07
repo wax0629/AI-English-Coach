@@ -30,6 +30,7 @@ class SessionResponse(BaseModel):
     difficulty: Difficulty
     status: Literal["active", "finished"]
     created_at: datetime
+    learner_profile: "LearnerProfileResponse | None" = None
 
 
 class CreateRealtimeClientSecretRequest(BaseModel):
@@ -81,7 +82,7 @@ class PronunciationWordScore(BaseModel):
 
 
 class PronunciationFeedback(BaseModel):
-    level: Literal["excellent", "good", "needs_focus", "retry"]
+    level: Literal["excellent", "good", "needs_focus", "retry", "no_speech", "assessment_unavailable"]
     message: str
 
 
@@ -171,3 +172,37 @@ class PracticeReportResponse(BaseModel):
     strengths: list[str]
     corrections: list[ReportCorrection]
     drills: list[ReportDrill]
+
+
+class LearnerFocusArea(BaseModel):
+    category: Literal["correction", "target_expression", "score"]
+    label: str
+    detail: str
+    count: int = Field(ge=1)
+    scenario_id: str | None = None
+    scenario_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class LearnerCorrectionMemory(BaseModel):
+    original: str
+    suggestion: str
+    reason: str
+    severity: Literal["low", "medium", "high"]
+    count: int = Field(ge=1)
+    scenario_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class LearnerExpressionMemory(BaseModel):
+    expression: str
+    scenario_id: str
+    count: int = Field(ge=1)
+
+
+class LearnerProfileResponse(BaseModel):
+    user_id: str
+    practice_count: int = Field(ge=0)
+    updated_at: datetime
+    focus_areas: list[LearnerFocusArea]
+    recurring_corrections: list[LearnerCorrectionMemory]
+    missed_expressions: list[LearnerExpressionMemory]
+    coach_note: str

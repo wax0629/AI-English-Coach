@@ -88,6 +88,102 @@ def test_parse_azure_pronunciation_response_normalizes_scores_and_words() -> Non
     assert result["feedback"]["level"] == "good"
 
 
+def test_parse_azure_pronunciation_response_reads_rest_flat_scores() -> None:
+    result = parse_azure_pronunciation_response(
+        {
+            "RecognitionStatus": "Success",
+            "DisplayText": "Good morning.",
+            "NBest": [
+                {
+                    "Confidence": 0.98,
+                    "Display": "Good morning.",
+                    "AccuracyScore": 100.0,
+                    "FluencyScore": 96.3,
+                    "CompletenessScore": 100.0,
+                    "ProsodyScore": 87.8,
+                    "PronScore": 95.1,
+                    "Words": [
+                        {
+                            "Word": "good",
+                            "AccuracyScore": 100.0,
+                            "ErrorType": "None",
+                        },
+                        {
+                            "Word": "morning",
+                            "AccuracyScore": 88.6,
+                            "ErrorType": "None",
+                        },
+                    ],
+                }
+            ],
+        },
+        session_id="session-1",
+        reference_text="Good morning.",
+    )
+
+    assert result["scores"] == {
+        "pronunciation": 95,
+        "accuracy": 100,
+        "fluency": 96,
+        "completeness": 100,
+        "prosody": 88,
+    }
+    assert result["words"][1] == {"word": "morning", "accuracy": 89, "error_type": "None"}
+    assert result["feedback"]["level"] == "excellent"
+
+
+def test_parse_azure_pronunciation_response_marks_no_speech() -> None:
+    result = parse_azure_pronunciation_response(
+        {
+            "RecognitionStatus": "Success",
+            "NBest": [
+                {
+                    "Display": "",
+                    "PronunciationAssessment": {
+                        "PronScore": 0,
+                        "AccuracyScore": 0,
+                        "FluencyScore": 0,
+                        "CompletenessScore": 0,
+                        "ProsodyScore": 0,
+                    },
+                }
+            ],
+        },
+        session_id="session-1",
+        reference_text="Could I have a cappuccino, please?",
+    )
+
+    assert result["feedback"]["level"] == "no_speech"
+    assert "未识别到有效英文语音" in result["feedback"]["message"]
+
+
+def test_parse_azure_pronunciation_response_marks_assessment_unavailable() -> None:
+    result = parse_azure_pronunciation_response(
+        {
+            "RecognitionStatus": "Success",
+            "DisplayText": "Could I have a cappuccino please?",
+            "NBest": [
+                {
+                    "Display": "Could I have a cappuccino please?",
+                    "Words": [
+                        {"Word": "Could"},
+                        {"Word": "I"},
+                        {"Word": "have"},
+                        {"Word": "a"},
+                        {"Word": "cappuccino"},
+                        {"Word": "please"},
+                    ],
+                }
+            ],
+        },
+        session_id="session-1",
+        reference_text="Could I have a cappuccino, please?",
+    )
+
+    assert result["feedback"]["level"] == "assessment_unavailable"
+    assert "没有返回发音评分" in result["feedback"]["message"]
+
+
 @pytest.mark.anyio
 async def test_pronunciation_assessment_requires_azure_config() -> None:
     app.dependency_overrides[get_app_settings] = lambda: Settings(AZURE_SPEECH_KEY="", AZURE_SPEECH_REGION="")
@@ -227,3 +323,92 @@ async def test_pronunciation_assessment_returns_scores(monkeypatch: pytest.Monke
         "language": "en-US",
         "region": "eastus",
     }
+
+
+@pytest.mark.anyio
+async def test_pronunciation_assessment_returns_no_speech_feedback(monkeypatch: pytest.MonkeyPatch) -> None:
+    app.dependency_overrides[get_app_settings] = lambda: Settings(
+        AZURE_SPEECH_KEY="azure-test-key",
+        AZURE_SPEECH_REGION="eastus",
+    )
+
+    async def fake_request_azure_pronunciation(*args: object, **kwargs: object) -> dict[str, object]:
+        return {
+            "RecognitionStatus": "Success",
+            "NBest": [
+                {
+                    "Display": "",
+                    "PronunciationAssessment": {
+                        "PronScore": 0,
+                        "AccuracyScore": 0,
+                        "FluencyScore": 0,
+                        "CompletenessScore": 0,
+                        "ProsodyScore": 0,
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr("app.routes.pronunciation.request_azure_pronunciation", fake_request_azure_pronunciation)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        session_id = await create_practice_session(client)
+        response = await client.post(
+            "/api/pronunciation/assess",
+            json={
+                "session_id": session_id,
+                "reference_text": "Could I have a cappuccino, please?",
+                "audio_base64": base64.b64encode(b"fake-wav").decode("ascii"),
+                "content_type": "audio/wav",
+            },
+        )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["feedback"]["level"] == "no_speech"
+
+
+@pytest.mark.anyio
+async def test_pronunciation_assessment_returns_assessment_unavailable_feedback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app.dependency_overrides[get_app_settings] = lambda: Settings(
+        AZURE_SPEECH_KEY="azure-test-key",
+        AZURE_SPEECH_REGION="eastus",
+    )
+
+    async def fake_request_azure_pronunciation(*args: object, **kwargs: object) -> dict[str, object]:
+        return {
+            "RecognitionStatus": "Success",
+            "DisplayText": "Could I have a cappuccino please?",
+            "NBest": [
+                {
+                    "Display": "Could I have a cappuccino please?",
+                    "Words": [
+                        {"Word": "Could"},
+                        {"Word": "I"},
+                        {"Word": "have"},
+                    ],
+                }
+            ],
+        }
+
+    monkeypatch.setattr("app.routes.pronunciation.request_azure_pronunciation", fake_request_azure_pronunciation)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        session_id = await create_practice_session(client)
+        response = await client.post(
+            "/api/pronunciation/assess",
+            json={
+                "session_id": session_id,
+                "reference_text": "Could I have a cappuccino, please?",
+                "audio_base64": base64.b64encode(b"fake-wav").decode("ascii"),
+                "content_type": "audio/wav",
+            },
+        )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["feedback"]["level"] == "assessment_unavailable"

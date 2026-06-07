@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.dependencies import get_app_settings, get_db
-from app.models import PracticeSession
+from app.learner_profile import get_profile_context
+from app.models import LearnerProfile, PracticeSession
 from app.scenarios import Scenario, get_scenario
 from app.schemas import CreateGeminiLiveTokenRequest, GeminiLiveTokenResponse
 
@@ -17,9 +18,9 @@ GEMINI_API_VERSION = "v1alpha"
 GEMINI_AUTH_TOKENS_PATH = "auth_tokens"
 
 
-def build_gemini_live_instructions(scenario: Scenario, difficulty: str) -> str:
+def build_gemini_live_instructions(scenario: Scenario, difficulty: str, profile_context: str = "") -> str:
     expressions = ", ".join(scenario.target_expressions)
-    return (
+    instructions = (
         "You are an AI English speaking coach running a realistic voice role-play. "
         f"The learner selected the scenario '{scenario.title}'. "
         f"You play the role of {scenario.role}. "
@@ -28,6 +29,9 @@ def build_gemini_live_instructions(scenario: Scenario, difficulty: str) -> str:
         "Coach with natural follow-up questions and encourage the learner to reuse these target expressions: "
         f"{expressions}."
     )
+    if profile_context:
+        instructions += f" {profile_context}"
+    return instructions
 
 
 def gemini_model_resource_name(model: str) -> str:
@@ -40,6 +44,7 @@ def build_gemini_live_token_config(
     settings: Settings,
     scenario: Scenario,
     difficulty: str,
+    profile_context: str = "",
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     return {
@@ -55,7 +60,7 @@ def build_gemini_live_token_config(
             "systemInstruction": {
                 "parts": [
                     {
-                        "text": build_gemini_live_instructions(scenario, difficulty),
+                        "text": build_gemini_live_instructions(scenario, difficulty, profile_context),
                     },
                 ],
             },
@@ -132,6 +137,7 @@ async def create_gemini_live_token(
         settings=settings,
         scenario=scenario,
         difficulty=practice_session.difficulty,
+        profile_context=get_profile_context(db.get(LearnerProfile, practice_session.user_id), practice_session.scenario_id),
     )
     gemini_response = await request_gemini_live_token(settings=settings, token_config=token_config)
 

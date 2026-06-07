@@ -1564,6 +1564,21 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.drill-card em {
+  display: block;
+  margin-top: 2px;
+  padding: 9px 10px;
+  border: 1px solid rgba(24, 169, 153, 0.18);
+  border-radius: 8px;
+  background: rgba(238, 247, 242, 0.72);
+  color: #0b7469;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .drill-card {
   background:
     linear-gradient(135deg, rgba(245, 185, 66, 0.13), rgba(255, 253, 248, 0.98)),
@@ -1957,6 +1972,23 @@ button:disabled {
 .pronunciation-score-grid span {
   background: rgba(24, 169, 153, 0.12);
   color: #0b7469;
+}
+
+.pronunciation-diagnostics {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px dashed rgba(24, 169, 153, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.74);
+}
+
+.pronunciation-diagnostics span {
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .word-score-list span {
@@ -2397,6 +2429,102 @@ h1 {
   font-size: 16px;
   line-height: 1.6;
   overflow-wrap: anywhere;
+}
+
+.learner-memory {
+  display: grid;
+  gap: 10px;
+  padding: 14px 0 2px;
+  border-top: 1px solid rgba(245, 185, 66, 0.24);
+  color: #fffdf8;
+}
+
+.learner-memory-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.learner-memory-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: rgba(255, 253, 248, 0.64);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.learner-memory-head svg {
+  width: 15px;
+  height: 15px;
+  color: var(--gold);
+  flex: 0 0 auto;
+}
+
+.learner-memory-head strong {
+  color: #fff2bd;
+  font-size: 15px;
+  line-height: 1.25;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.learner-memory p {
+  margin: 0;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.learner-memory-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.learner-memory-chips span {
+  max-width: 100%;
+  padding: 7px 8px;
+  border: 1px solid rgba(245, 185, 66, 0.28);
+  border-radius: 8px;
+  background: rgba(245, 185, 66, 0.12);
+  color: #fff2bd;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.room-memory {
+  padding: 13px;
+  border: 1px solid rgba(24, 169, 153, 0.18);
+  border-left: 4px solid var(--mint);
+  background:
+    linear-gradient(135deg, rgba(24, 169, 153, 0.12), rgba(245, 185, 66, 0.08)),
+    rgba(255, 253, 248, 0.78);
+  color: var(--ink);
+}
+
+.room-memory .learner-memory-head span {
+  color: #0b7469;
+}
+
+.room-memory .learner-memory-head strong {
+  color: var(--ink);
+}
+
+.room-memory p {
+  color: var(--ink-2);
+}
+
+.room-memory .learner-memory-chips span {
+  border-color: rgba(24, 169, 153, 0.18);
+  background: rgba(255, 253, 248, 0.92);
+  color: #0b7469;
 }
 
 .objective-list {

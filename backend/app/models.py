@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, String, Text
+from sqlalchemy import JSON, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -46,3 +46,16 @@ class PracticeReport(Base):
     corrections: Mapped[list[dict[str, str]]] = mapped_column(JSON)
     drills: Mapped[list[dict[str, str]]] = mapped_column(JSON)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class LearnerProfile(Base):
+    __tablename__ = "learner_profiles"
+
+    user_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    practice_count: Mapped[int] = mapped_column(Integer, default=0)
+    focus_areas: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    recurring_corrections: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    missed_expressions: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    processed_session_ids: Mapped[list[str]] = mapped_column(JSON)
+    coach_note: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

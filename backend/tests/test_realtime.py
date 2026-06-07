@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import httpx
 import pytest
 
@@ -20,14 +22,27 @@ def ensure_database() -> None:
     app.dependency_overrides.clear()
 
 
-async def create_practice_session(client: httpx.AsyncClient) -> str:
+async def create_practice_session(
+    client: httpx.AsyncClient,
+    scenario_id: str = "interview",
+    difficulty: str = "b1",
+    user_id: str = "demo",
+) -> str:
     response = await client.post(
         "/api/sessions",
-        json={"scenario_id": "interview", "difficulty": "b1", "user_id": "demo"},
+        json={"scenario_id": scenario_id, "difficulty": difficulty, "user_id": user_id},
     )
 
     assert response.status_code == 201
     return str(response.json()["session_id"])
+
+
+async def add_turn(client: httpx.AsyncClient, session_id: str, role: str, text: str) -> None:
+    response = await client.post(
+        "/api/conversation/turns",
+        json={"session_id": session_id, "role": role, "text": text},
+    )
+    assert response.status_code == 201
 
 
 @pytest.mark.anyio
@@ -96,3 +111,122 @@ async def test_realtime_client_secret_uses_session_scenario(monkeypatch: pytest.
     }
     assert "Hiring Manager" in captured_config["session"]["instructions"]
     assert "求职面试" in captured_config["session"]["instructions"]
+
+
+@pytest.mark.anyio
+async def test_realtime_client_secret_includes_learner_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    user_id = f"realtime-memory-{uuid4()}"
+    captured_config: dict[str, object] = {}
+    app.dependency_overrides[get_app_settings] = lambda: Settings(
+        _env_file=None,
+        OPENAI_API_KEY="sk-test",
+        REPORT_LLM_PROVIDER="rules",
+    )
+
+    async def fake_request_openai_client_secret(
+        settings: Settings,
+        session_config: dict[str, object],
+        user_id: str,
+    ) -> dict[str, object]:
+        captured_config.update(session_config)
+        return {
+            "value": "ek_test_secret",
+            "expires_at": 1_800_000_000,
+            "session": {"id": "sess_realtime_memory"},
+        }
+
+    monkeypatch.setattr(
+        "app.routes.realtime.request_openai_client_secret",
+        fake_request_openai_client_secret,
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        old_session_id = await create_practice_session(
+            client,
+            scenario_id="restaurant",
+            difficulty="a2",
+            user_id=user_id,
+        )
+        await add_turn(client, old_session_id, "user", "I want cappuccino. Can you recommend me dessert?")
+        report_response = await client.post(f"/api/sessions/{old_session_id}/report")
+
+        next_session_id = await create_practice_session(
+            client,
+            scenario_id="restaurant",
+            difficulty="a2",
+            user_id=user_id,
+        )
+        response = await client.post("/api/realtime/client-secret", json={"session_id": next_session_id})
+
+    assert report_response.status_code == 201
+    assert response.status_code == 201
+    instructions = captured_config["session"]["instructions"]
+    assert "Learner memory:" in instructions
+    assert "I'd like" in instructions
+    assert "Could I have" in instructions
+
+
+@pytest.mark.anyio
+async def test_realtime_memory_prioritizes_the_current_scenario(monkeypatch: pytest.MonkeyPatch) -> None:
+    user_id = f"realtime-scenario-memory-{uuid4()}"
+    captured_config: dict[str, object] = {}
+    app.dependency_overrides[get_app_settings] = lambda: Settings(
+        _env_file=None,
+        OPENAI_API_KEY="sk-test",
+        REPORT_LLM_PROVIDER="rules",
+    )
+
+    async def fake_request_openai_client_secret(
+        settings: Settings,
+        session_config: dict[str, object],
+        user_id: str,
+    ) -> dict[str, object]:
+        captured_config.update(session_config)
+        return {
+            "value": "ek_test_secret",
+            "expires_at": 1_800_000_000,
+            "session": {"id": "sess_realtime_scenario_memory"},
+        }
+
+    monkeypatch.setattr(
+        "app.routes.realtime.request_openai_client_secret",
+        fake_request_openai_client_secret,
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        restaurant_session_id = await create_practice_session(
+            client,
+            scenario_id="restaurant",
+            difficulty="a2",
+            user_id=user_id,
+        )
+        await add_turn(client, restaurant_session_id, "user", "I want cappuccino. Can you recommend me dessert?")
+        restaurant_report_response = await client.post(f"/api/sessions/{restaurant_session_id}/report")
+
+        interview_session_id = await create_practice_session(
+            client,
+            scenario_id="interview",
+            difficulty="b1",
+            user_id=user_id,
+        )
+        await add_turn(client, interview_session_id, "user", "I responsible for onboarding customers.")
+        interview_report_response = await client.post(f"/api/sessions/{interview_session_id}/report")
+
+        next_interview_session_id = await create_practice_session(
+            client,
+            scenario_id="interview",
+            difficulty="b1",
+            user_id=user_id,
+        )
+        response = await client.post("/api/realtime/client-secret", json={"session_id": next_interview_session_id})
+
+    assert restaurant_report_response.status_code == 201
+    assert interview_report_response.status_code == 201
+    assert response.status_code == 201
+    instructions = captured_config["session"]["instructions"]
+    assert "Learner memory:" in instructions
+    assert "I was responsible for" in instructions
+    assert "I'd like" not in instructions
+    assert "Could you recommend" not in instructions

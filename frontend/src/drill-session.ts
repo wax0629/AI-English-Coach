@@ -36,6 +36,9 @@ export function createDrillKey(drill: DrillTarget, index: number) {
 }
 
 function getPronunciationScore(assessment?: PronunciationAssessment) {
+  if (assessment?.feedback.level === "no_speech" || assessment?.feedback.level === "assessment_unavailable") {
+    return null;
+  }
   return assessment?.scores.pronunciation ?? null;
 }
 

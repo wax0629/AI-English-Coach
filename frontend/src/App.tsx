@@ -27,9 +27,15 @@ import {
 import type { LucideIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { buildPronunciationReferenceText } from "./drill-reference";
 import { buildDrillSessionState, createDrillKey, type DrillPracticeStatus } from "./drill-session";
 import { GeminiLiveAudioSession, type GeminiLiveToken, type GeminiTranscriptEvent } from "./gemini-live";
-import { convertRecordingToAzureWav, type PronunciationAssessment } from "./pronunciation";
+import { buildLearnerProfileSummary, type LearnerProfile, type LearnerProfileSummary } from "./learner-profile";
+import {
+  buildPronunciationDiagnostics,
+  convertRecordingToAzureWav,
+  type PronunciationAssessment,
+} from "./pronunciation";
 import "./styles.css";
 
 type Difficulty = "a2" | "b1" | "b2";
@@ -55,6 +61,7 @@ type CreatedSession = {
   scenario: Scenario;
   difficulty: Difficulty;
   status: "active" | "finished";
+  learner_profile: LearnerProfile | null;
 };
 
 type ConversationRole = "user" | "assistant";
@@ -145,6 +152,7 @@ type AccentStyle = CSSProperties & { "--accent": string };
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 const drillPassingScore = 75;
+const learnerUserId = "demo";
 
 const scoreLabels: Array<{ key: keyof PracticeReport["scores"]; label: string; caption: string }> = [
   { key: "fluency", label: "流利度", caption: "节奏与连续表达" },
@@ -258,6 +266,32 @@ function ScenarioBackdrop({ scenarioId }: { scenarioId: string }) {
   return null;
 }
 
+function LearnerMemoryPanel({
+  className = "",
+  summary,
+}: {
+  className?: string;
+  summary: LearnerProfileSummary;
+}) {
+  return (
+    <div className={`learner-memory ${className}`.trim()}>
+      <div className="learner-memory-head">
+        <span>
+          <Sparkles aria-hidden="true" />
+          Coach Memory
+        </span>
+        <strong>{summary.title}</strong>
+      </div>
+      <p>{summary.note}</p>
+      <div className="learner-memory-chips">
+        {summary.chips.map((chip) => (
+          <span key={chip}>{chip}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>("");
@@ -272,6 +306,7 @@ function App() {
   const [reportError, setReportError] = useState<string>("");
   const [roomNotice, setRoomNotice] = useState<string>("副本已锁定，等待语音链路启动");
   const [createdSession, setCreatedSession] = useState<CreatedSession | null>(null);
+  const [learnerProfile, setLearnerProfile] = useState<LearnerProfile | null>(null);
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [practiceReport, setPracticeReport] = useState<PracticeReport | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("idle");
@@ -331,6 +366,10 @@ function App() {
   }, []);
 
   useEffect(() => {
+    void loadLearnerProfile();
+  }, []);
+
+  useEffect(() => {
     return () => {
       closeRealtimeConnection("ended");
       stopPronunciationCapture();
@@ -377,6 +416,10 @@ function App() {
   const activeMeta = activeScenario ? scenarioMeta[activeScenario.id] : null;
   const statusMeta = realtimeStatusLabels[realtimeStatus];
   const userTurnCount = turns.filter((turn) => turn.role === "user").length;
+  const learnerMemorySummary = useMemo(
+    () => buildLearnerProfileSummary(learnerProfile, activeScenario?.id ?? selectedScenarioId),
+    [activeScenario?.id, learnerProfile, selectedScenarioId],
+  );
 
   function selectScenario(scenario: Scenario) {
     setSelectedScenarioId(scenario.id);
@@ -424,6 +467,23 @@ function App() {
     setPronunciationErrors({});
   }
 
+  async function loadLearnerProfile() {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/learner-profiles/${learnerUserId}`);
+      if (response.status === 404) {
+        setLearnerProfile(null);
+        return;
+      }
+      if (!response.ok) {
+        return;
+      }
+      const profile = (await response.json()) as LearnerProfile;
+      setLearnerProfile(profile);
+    } catch {
+      // Learner memory is helpful, but it should never block a fresh speaking session.
+    }
+  }
+
   async function createSession() {
     if (!selectedScenario) {
       return;
@@ -439,7 +499,7 @@ function App() {
         body: JSON.stringify({
           scenario_id: selectedScenario.id,
           difficulty,
-          user_id: "demo",
+          user_id: learnerUserId,
         }),
       });
       if (!response.ok) {
@@ -449,6 +509,7 @@ function App() {
       savedEventIdsRef.current.clear();
       saveTurnQueueRef.current = Promise.resolve();
       setCreatedSession(data);
+      setLearnerProfile(data.learner_profile ?? null);
       setTurns([]);
       setPracticeReport(null);
       resetPronunciationState();
@@ -739,6 +800,7 @@ function App() {
       resetPronunciationState();
       setPracticeReport(report);
       setActiveDrillKey(report.drills[0] ? createDrillKey(report.drills[0], 0) : null);
+      void loadLearnerProfile();
       setView("report");
       window.requestAnimationFrame(() => {
         window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1076,6 +1138,13 @@ function App() {
                 const pronunciationStatus = pronunciationStatuses[key] ?? "idle";
                 const pronunciationResult = pronunciationResults[key];
                 const pronunciationError = pronunciationErrors[key];
+                const pronunciationReference = buildPronunciationReferenceText(card, activeScenario.id);
+                const pronunciationDiagnostics = pronunciationResult
+                  ? buildPronunciationDiagnostics(pronunciationResult)
+                  : null;
+                const hasPronunciationScores = pronunciationResult
+                  ? !["assessment_unavailable", "no_speech"].includes(pronunciationResult.feedback.level)
+                  : false;
                 const isRecording = pronunciationStatus === "recording";
                 const isAssessing = pronunciationStatus === "assessing";
 
@@ -1092,6 +1161,7 @@ function App() {
                       <strong>{card.title}</strong>
                       <p>{card.prompt}</p>
                       <small>{card.target_expression}</small>
+                      <em>朗读句：{pronunciationReference}</em>
                     </button>
 
                     <div className="drill-card-actions">
@@ -1103,7 +1173,7 @@ function App() {
                             stopPronunciationRecording();
                             return;
                           }
-                          void startPronunciationRecording(key, card.target_expression);
+                          void startPronunciationRecording(key, pronunciationReference);
                         }}
                         type="button"
                       >
@@ -1132,22 +1202,32 @@ function App() {
                     {pronunciationResult ? (
                       <div className="pronunciation-result" aria-label="pronunciation result">
                         <div className="pronunciation-scoreline">
-                          <strong>{pronunciationResult.scores.pronunciation}</strong>
+                          <strong>{hasPronunciationScores ? pronunciationResult.scores.pronunciation : "--"}</strong>
                           <span>{pronunciationResult.feedback.message}</span>
                         </div>
-                        <div className="pronunciation-score-grid">
-                          <span>准确 {pronunciationResult.scores.accuracy}</span>
-                          <span>流利 {pronunciationResult.scores.fluency}</span>
-                          <span>完整 {pronunciationResult.scores.completeness}</span>
-                          <span>韵律 {pronunciationResult.scores.prosody}</span>
-                        </div>
-                        <div className="word-score-list">
-                          {pronunciationResult.words.slice(0, 8).map((word, wordIndex) => (
-                            <span className={word.accuracy < 70 ? "needs-work" : ""} key={`${word.word}-${wordIndex}`}>
-                              {word.word} {word.accuracy}
-                            </span>
-                          ))}
-                        </div>
+                        {hasPronunciationScores ? (
+                          <div className="pronunciation-score-grid">
+                            <span>准确 {pronunciationResult.scores.accuracy}</span>
+                            <span>流利 {pronunciationResult.scores.fluency}</span>
+                            <span>完整 {pronunciationResult.scores.completeness}</span>
+                            <span>韵律 {pronunciationResult.scores.prosody}</span>
+                          </div>
+                        ) : null}
+                        {pronunciationDiagnostics ? (
+                          <div className="pronunciation-diagnostics">
+                            <span>{pronunciationDiagnostics.referenceLabel}</span>
+                            <span>{pronunciationDiagnostics.recognizedLabel}</span>
+                          </div>
+                        ) : null}
+                        {hasPronunciationScores ? (
+                          <div className="word-score-list">
+                            {pronunciationResult.words.slice(0, 8).map((word, wordIndex) => (
+                              <span className={word.accuracy < 70 ? "needs-work" : ""} key={`${word.word}-${wordIndex}`}>
+                                {word.word} {word.accuracy}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                   </article>
@@ -1266,6 +1346,7 @@ function App() {
                 <strong>{activeMeta?.checkpoint ?? "完成一次自然对话"}</strong>
               </div>
             </div>
+            {learnerMemorySummary ? <LearnerMemoryPanel className="room-memory" summary={learnerMemorySummary} /> : null}
             <div className="room-skill-deck">
               {activeScenario.target_expressions.map((expression) => (
                 <span key={expression}>{expression}</span>
@@ -1457,6 +1538,8 @@ function App() {
                 <span>Mission Brief</span>
                 <p>{selectedScenario.user_goal}</p>
               </div>
+
+              {learnerMemorySummary ? <LearnerMemoryPanel summary={learnerMemorySummary} /> : null}
 
               <div className="objective-list" aria-label="quest checklist">
                 <span>
