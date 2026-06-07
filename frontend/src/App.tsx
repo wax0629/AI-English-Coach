@@ -36,6 +36,12 @@ import {
   convertRecordingToAzureWav,
   type PronunciationAssessment,
 } from "./pronunciation";
+import {
+  buildReadinessSummary,
+  orderedReadinessServices,
+  type ReadinessResponse,
+  type ServiceReadiness,
+} from "./readiness";
 import "./styles.css";
 
 type Difficulty = "a2" | "b1" | "b2";
@@ -74,6 +80,12 @@ type ConversationTurn = {
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
+};
+
+type DemoConversationResponse = {
+  session_id: string;
+  created: boolean;
+  turns: ConversationTurn[];
 };
 
 type PracticeReport = {
@@ -292,6 +304,47 @@ function LearnerMemoryPanel({
   );
 }
 
+function DemoStatusPanel({
+  className = "",
+  readiness,
+}: {
+  className?: string;
+  readiness: ReadinessResponse | null;
+}) {
+  const summary = buildReadinessSummary(readiness);
+  const services = orderedReadinessServices(readiness);
+
+  return (
+    <section className={`demo-status-card ${summary.tone} ${className}`.trim()} aria-label="demo readiness">
+      <div className="demo-status-head">
+        <span>
+          <Radio aria-hidden="true" />
+          Demo Control
+        </span>
+        <strong>
+          {summary.totalCount ? `${summary.configuredCount}/${summary.totalCount}` : "--"}
+        </strong>
+      </div>
+      <p>{summary.headline}</p>
+      {services.length ? (
+        <div className="demo-service-grid">
+          {services.map((service: ServiceReadiness) => (
+            <span className={service.configured ? "is-ready" : "is-missing"} key={service.label} title={service.detail}>
+              {service.configured ? <CheckCircle2 aria-hidden="true" /> : <AlertCircle aria-hidden="true" />}
+              {service.label}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <div className="demo-service-grid skeleton">
+          <span>检查中</span>
+          <span>等待后端</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function App() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>("");
@@ -301,11 +354,13 @@ function App() {
   const [isCreating, setIsCreating] = useState(false);
   const [isConnectingRealtime, setIsConnectingRealtime] = useState(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [isLoadingDemoTurns, setIsLoadingDemoTurns] = useState(false);
   const [error, setError] = useState<string>("");
   const [roomError, setRoomError] = useState<string>("");
   const [reportError, setReportError] = useState<string>("");
   const [roomNotice, setRoomNotice] = useState<string>("副本已锁定，等待语音链路启动");
   const [createdSession, setCreatedSession] = useState<CreatedSession | null>(null);
+  const [readiness, setReadiness] = useState<ReadinessResponse | null>(null);
   const [learnerProfile, setLearnerProfile] = useState<LearnerProfile | null>(null);
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [practiceReport, setPracticeReport] = useState<PracticeReport | null>(null);
@@ -367,6 +422,7 @@ function App() {
 
   useEffect(() => {
     void loadLearnerProfile();
+    void loadReadiness();
   }, []);
 
   useEffect(() => {
@@ -416,6 +472,7 @@ function App() {
   const activeMeta = activeScenario ? scenarioMeta[activeScenario.id] : null;
   const statusMeta = realtimeStatusLabels[realtimeStatus];
   const userTurnCount = turns.filter((turn) => turn.role === "user").length;
+  const canGenerateReport = userTurnCount > 0;
   const learnerMemorySummary = useMemo(
     () => buildLearnerProfileSummary(learnerProfile, activeScenario?.id ?? selectedScenarioId),
     [activeScenario?.id, learnerProfile, selectedScenarioId],
@@ -481,6 +538,19 @@ function App() {
       setLearnerProfile(profile);
     } catch {
       // Learner memory is helpful, but it should never block a fresh speaking session.
+    }
+  }
+
+  async function loadReadiness() {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/readiness`);
+      if (!response.ok) {
+        return;
+      }
+      const data = (await response.json()) as ReadinessResponse;
+      setReadiness(data);
+    } catch {
+      setReadiness(null);
     }
   }
 
@@ -560,6 +630,36 @@ function App() {
   function queueConversationTurn(role: ConversationRole, text: string, eventId: string) {
     saveTurnQueueRef.current = saveTurnQueueRef.current.then(() => saveConversationTurn(role, text, eventId));
     void saveTurnQueueRef.current;
+  }
+
+  async function loadDemoConversation() {
+    if (!createdSession) {
+      return;
+    }
+
+    try {
+      closeRealtimeConnection("ended");
+      setIsLoadingDemoTurns(true);
+      setRoomError("");
+      setReportError("");
+      setRoomNotice("正在载入可演示的完整对话");
+
+      const response = await fetch(`${apiBaseUrl}/api/sessions/${createdSession.session_id}/demo-turns`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(payload?.detail ?? "演示对话载入失败");
+      }
+
+      const payload = (await response.json()) as DemoConversationResponse;
+      setTurns(payload.turns);
+      setRoomNotice(payload.created ? "演示对话已载入，可以直接生成报告" : "当前对话已可用于演示报告");
+    } catch (demoError) {
+      setRoomError(demoError instanceof Error ? demoError.message : "演示对话载入失败");
+    } finally {
+      setIsLoadingDemoTurns(false);
+    }
   }
 
   function readRealtimeTranscript(event: RealtimeEvent) {
@@ -776,6 +876,10 @@ function App() {
 
   async function generateReport(reportLevel: ReportLevel) {
     if (!createdSession) {
+      return;
+    }
+    if (!canGenerateReport) {
+      setReportError("至少需要一轮用户英文发言。语音链路不稳定时，可以先载入演示对话。");
       return;
     }
 
@@ -1332,6 +1436,17 @@ function App() {
                 </button>
               ))}
             </div>
+            <DemoStatusPanel className="room-demo-status" readiness={readiness} />
+            <div className="demo-runner">
+              <div>
+                <span>演示兜底</span>
+                <strong>语音链路波动时保持闭环</strong>
+              </div>
+              <button disabled={isLoadingDemoTurns} onClick={() => void loadDemoConversation()} type="button">
+                {isLoadingDemoTurns ? <Loader2 className="spin" aria-hidden="true" /> : <Play aria-hidden="true" />}
+                <span>{isLoadingDemoTurns ? "载入中" : turns.length ? "刷新演示" : "载入演示对话"}</span>
+              </button>
+            </div>
             <div className="console-metric">
               <Trophy aria-hidden="true" />
               <div>
@@ -1377,7 +1492,7 @@ function App() {
               {turns.length === 0 ? (
                 <div className="empty-transcript">
                   <Waves aria-hidden="true" />
-                  <span>等待第一轮英文对话</span>
+                  <span>等待第一轮英文对话，或载入演示对话生成报告</span>
                 </div>
               ) : (
                 turns.map((turn) => (
@@ -1399,7 +1514,7 @@ function App() {
             <div className="report-action-row">
               <button
                 className="report-action standard"
-                disabled={isGeneratingReport}
+                disabled={isGeneratingReport || !canGenerateReport}
                 onClick={() => void generateReport("standard")}
                 type="button"
               >
@@ -1408,7 +1523,7 @@ function App() {
               </button>
               <button
                 className="report-action advanced"
-                disabled={isGeneratingReport}
+                disabled={isGeneratingReport || !canGenerateReport}
                 onClick={() => void generateReport("advanced")}
                 type="button"
               >
@@ -1510,6 +1625,7 @@ function App() {
               })}
             </div>
           )}
+          <DemoStatusPanel className="map-demo-status" readiness={readiness} />
         </section>
 
         <aside className="coach-link" aria-label="selected scenario">

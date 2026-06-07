@@ -10,6 +10,7 @@ from app.routes.conversation import router as conversation_router
 from app.routes.gemini import router as gemini_router
 from app.routes.learner_profiles import router as learner_profiles_router
 from app.routes.pronunciation import router as pronunciation_router
+from app.routes.readiness import router as readiness_router
 from app.routes.realtime import router as realtime_router
 from app.routes.reports import router as reports_router
 from app.routes.sessions import router as sessions_router
@@ -46,6 +47,7 @@ app.include_router(gemini_router)
 app.include_router(learner_profiles_router)
 app.include_router(reports_router)
 app.include_router(pronunciation_router)
+app.include_router(readiness_router)
 
 
 @app.get("/health")

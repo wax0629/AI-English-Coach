@@ -77,3 +77,29 @@ async def test_list_turns_rejects_unknown_session() -> None:
         response = await client.get("/api/sessions/missing-session/turns")
 
     assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_demo_conversation_populates_a_session_once() -> None:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        session_response = await client.post(
+            "/api/sessions",
+            json={"scenario_id": "restaurant", "difficulty": "a2", "user_id": "demo"},
+        )
+        session_id = session_response.json()["session_id"]
+
+        response = await client.post(f"/api/sessions/{session_id}/demo-turns")
+        second_response = await client.post(f"/api/sessions/{session_id}/demo-turns")
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["created"] is True
+    assert len(payload["turns"]) >= 4
+    assert {turn["role"] for turn in payload["turns"]} == {"user", "assistant"}
+    assert "cappuccino" in " ".join(turn["text"].lower() for turn in payload["turns"])
+
+    assert second_response.status_code == 201
+    second_payload = second_response.json()
+    assert second_payload["created"] is False
+    assert [turn["turn_id"] for turn in second_payload["turns"]] == [turn["turn_id"] for turn in payload["turns"]]
