@@ -894,8 +894,11 @@ button:disabled {
   grid-area: console;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 18px;
+  gap: 10px;
+  align-self: start;
+  max-height: calc(100vh - 132px);
+  padding: 14px;
+  overflow-y: auto;
   background:
     linear-gradient(180deg, rgba(255, 253, 248, 0.96), rgba(238, 247, 242, 0.95)),
     #fffdf8;
@@ -910,11 +913,22 @@ button:disabled {
 }
 
 .console-header strong {
-  padding: 8px 10px;
+  padding: 7px 10px;
   border-radius: 8px;
   background: #15201c;
   color: #fff2bd;
   font-size: 13px;
+}
+
+.console-action-dock {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+  padding: 8px;
+  border: 1px solid rgba(21, 32, 28, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.72);
 }
 
 .provider-switch {
@@ -955,6 +969,45 @@ button:disabled {
   font-size: 12px;
   font-weight: 850;
   line-height: 1.25;
+}
+
+.compact-provider-switch {
+  gap: 6px;
+}
+
+.compact-provider-switch button {
+  min-height: 50px;
+  padding: 8px 9px;
+}
+
+.compact-provider-switch small {
+  display: none;
+}
+
+.demo-load-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 92px;
+  min-height: 50px;
+  border: 1px solid rgba(24, 169, 153, 0.28);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(24, 169, 153, 0.18), rgba(245, 185, 66, 0.12)),
+    #fffdf8;
+  color: #0b7469;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.demo-load-button:disabled {
+  opacity: 0.62;
+}
+
+.demo-load-button svg {
+  width: 16px;
+  height: 16px;
 }
 
 .demo-status-card {
@@ -1067,9 +1120,29 @@ button:disabled {
 }
 
 .room-demo-status {
-  background:
-    linear-gradient(135deg, rgba(255, 253, 248, 0.98), rgba(238, 247, 242, 0.92)),
-    #fffdf8;
+  gap: 7px;
+  padding: 10px;
+  border-style: dashed;
+  background: rgba(255, 253, 248, 0.64);
+}
+
+.room-demo-status .demo-status-head span {
+  font-size: 11px;
+}
+
+.room-demo-status .demo-status-head strong {
+  min-width: 36px;
+  min-height: 24px;
+}
+
+.room-demo-status p {
+  display: none;
+}
+
+.room-demo-status .demo-service-grid span {
+  min-height: 26px;
+  padding: 0 7px;
+  font-size: 11px;
 }
 
 .map-demo-status {
@@ -1153,6 +1226,46 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.mission-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mission-summary-strip div {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 3px 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(21, 32, 28, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.72);
+}
+
+.mission-summary-strip svg {
+  grid-row: span 2;
+  width: 18px;
+  height: 18px;
+  color: var(--coral);
+}
+
+.mission-summary-strip span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 950;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.mission-summary-strip strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 .room-skill-deck {
   display: flex;
   flex-wrap: wrap;
@@ -1170,6 +1283,56 @@ button:disabled {
   font-weight: 900;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.dynamic-skill-deck.room-skill-deck {
+  display: grid;
+  gap: 8px;
+}
+
+.dynamic-skill-deck.room-skill-deck > strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.dynamic-skill-deck.room-skill-deck > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 7px;
+}
+
+.dynamic-skill-deck.room-skill-deck .skill-card-token {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 9px;
+  border-color: rgba(24, 169, 153, 0.2);
+  background: rgba(255, 253, 248, 0.9);
+  color: var(--ink);
+}
+
+.dynamic-skill-deck.room-skill-deck .skill-card-token em {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: center;
+  background: rgba(24, 169, 153, 0.12);
+  color: #0b7469;
+  font-size: 10px;
+}
+
+.dynamic-skill-deck.room-skill-deck .skill-card-token b {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-skill-deck.room-skill-deck .skill-card-token small {
+  display: none;
 }
 
 .transcript-panel {
@@ -2608,10 +2771,10 @@ h1 {
 }
 
 .learner-memory-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 
 .learner-memory-head span {
@@ -2622,6 +2785,13 @@ h1 {
   font-size: 12px;
   font-weight: 950;
   text-transform: uppercase;
+}
+
+.learner-memory-title {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  min-width: 0;
 }
 
 .learner-memory-head svg {
@@ -2639,6 +2809,53 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.learner-memory-title small {
+  color: rgba(255, 253, 248, 0.58);
+  font-size: 11px;
+  font-weight: 950;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.learner-memory-head button,
+.learner-memory-chips button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(245, 185, 66, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.1);
+  color: #fff2bd;
+  cursor: pointer;
+}
+
+.learner-memory-head button:disabled,
+.learner-memory-chips button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.learner-memory-chips > span > button {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  transform: translateY(-50%);
+  border-color: rgba(255, 107, 90, 0.25);
+  border-radius: 999px;
+  color: #ffd9d4;
+}
+
+.learner-memory-chips > span > button svg {
+  width: 10px;
+  height: 10px;
+}
+
 .learner-memory p {
   margin: 0;
   color: #ffffff;
@@ -2654,9 +2871,10 @@ h1 {
   gap: 7px;
 }
 
-.learner-memory-chips span {
+.learner-memory-chips > span {
+  position: relative;
   max-width: 100%;
-  padding: 7px 8px;
+  padding: 7px 24px 7px 8px;
   border: 1px solid rgba(245, 185, 66, 0.28);
   border-radius: 8px;
   background: rgba(245, 185, 66, 0.12);
@@ -2667,13 +2885,35 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.memory-toggle-chip {
+  position: static;
+  gap: 4px;
+  width: auto;
+  min-width: 52px;
+  flex: 0 0 auto;
+  height: 31px;
+  padding: 0 9px;
+  border-style: dashed;
+  color: #fff2bd;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.memory-toggle-chip svg {
+  width: 12px;
+  height: 12px;
+}
+
 .room-memory {
-  padding: 13px;
-  border: 1px solid rgba(24, 169, 153, 0.18);
-  border-left: 4px solid var(--mint);
+  gap: 8px;
+  padding: 11px;
+  border: 1px solid rgba(24, 169, 153, 0.16);
+  border-left: 3px solid var(--mint);
   background:
-    linear-gradient(135deg, rgba(24, 169, 153, 0.12), rgba(245, 185, 66, 0.08)),
-    rgba(255, 253, 248, 0.78);
+    linear-gradient(135deg, rgba(24, 169, 153, 0.1), rgba(255, 253, 248, 0.82)),
+    rgba(255, 253, 248, 0.72);
   color: var(--ink);
 }
 
@@ -2685,13 +2925,36 @@ h1 {
   color: var(--ink);
 }
 
-.room-memory p {
-  color: var(--ink-2);
+.room-memory .learner-memory-title small {
+  color: var(--muted);
 }
 
-.room-memory .learner-memory-chips span {
+.room-memory p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.room-memory .learner-memory-chips > span {
+  padding: 7px 22px 7px 8px;
   border-color: rgba(24, 169, 153, 0.18);
-  background: rgba(255, 253, 248, 0.92);
+  background: rgba(255, 253, 248, 0.74);
+  color: #0b7469;
+}
+
+.room-memory .learner-memory-head button,
+.room-memory .learner-memory-chips button {
+  border-color: rgba(24, 169, 153, 0.22);
+  background: rgba(255, 253, 248, 0.88);
+  color: #0b7469;
+}
+
+.room-memory .memory-toggle-chip {
+  border-color: rgba(24, 169, 153, 0.24);
+  background: rgba(255, 253, 248, 0.72);
   color: #0b7469;
 }
 
@@ -2797,6 +3060,74 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.dynamic-skill-deck > strong {
+  color: inherit;
+}
+
+.dynamic-skill-deck > div {
+  display: grid;
+  gap: 8px;
+}
+
+.dynamic-skill-deck .skill-card-token {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255, 253, 248, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.1);
+  color: #fff2bd;
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.dynamic-skill-deck .skill-card-token em {
+  width: fit-content;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: rgba(255, 253, 248, 0.12);
+  color: rgba(255, 253, 248, 0.76);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.dynamic-skill-deck .skill-card-token b {
+  color: inherit;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.dynamic-skill-deck .skill-card-token small {
+  color: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+  opacity: 0.78;
+}
+
+.dynamic-skill-deck .skill-card-token.used {
+  border-color: rgba(245, 185, 66, 0.44);
+  background: rgba(245, 185, 66, 0.16);
+}
+
+.dynamic-skill-deck .skill-card-token.mastered {
+  border-color: rgba(24, 169, 153, 0.46);
+  background: rgba(24, 169, 153, 0.18);
+}
+
+.dynamic-skill-deck .skill-card-token.mastered em {
+  background: rgba(24, 169, 153, 0.18);
+  color: #0b7469;
+}
+
+.dynamic-skill-deck .skill-card-token.preview {
+  border-style: dashed;
+}
+
 .message-bar,
 .state-panel {
   display: flex;
@@ -2896,6 +3227,11 @@ h1 {
       "stage"
       "console"
       "transcript";
+  }
+
+  .mission-console {
+    max-height: none;
+    overflow-y: visible;
   }
 
   .report-layout {
@@ -3183,6 +3519,10 @@ h1 {
 
   .room-skill-deck {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dynamic-skill-deck.room-skill-deck > div {
     grid-template-columns: minmax(0, 1fr);
   }
 

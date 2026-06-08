@@ -31,6 +31,16 @@ class SessionResponse(BaseModel):
     status: Literal["active", "finished"]
     created_at: datetime
     learner_profile: "LearnerProfileResponse | None" = None
+    skill_cards: list["SessionSkillCard"] = Field(default_factory=list)
+
+
+class SessionSkillCard(BaseModel):
+    id: str
+    scenario_id: str
+    expression: str
+    prompt: str
+    hint: str
+    source: Literal["memory", "scenario_pool"]
 
 
 class CreateRealtimeClientSecretRequest(BaseModel):
@@ -222,3 +232,13 @@ class LearnerProfileResponse(BaseModel):
     recurring_corrections: list[LearnerCorrectionMemory]
     missed_expressions: list[LearnerExpressionMemory]
     coach_note: str
+
+
+class ForgetLearnerMemoryRequest(BaseModel):
+    memory_type: Literal["any", "correction", "target_expression"]
+    label: str = Field(min_length=1, max_length=180)
+    scenario_id: str | None = Field(default=None, max_length=40)
+
+
+class ClearLearnerMemoryRequest(BaseModel):
+    scenario_id: str | None = Field(default=None, max_length=40)

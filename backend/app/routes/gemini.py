@@ -11,6 +11,7 @@ from app.learner_profile import get_profile_context
 from app.models import LearnerProfile, PracticeSession
 from app.scenarios import Scenario, get_scenario
 from app.schemas import CreateGeminiLiveTokenRequest, GeminiLiveTokenResponse
+from app.skill_cards import build_session_skill_cards, skill_card_instruction
 
 
 router = APIRouter(prefix="/api/gemini", tags=["gemini"])
@@ -18,7 +19,12 @@ GEMINI_API_VERSION = "v1alpha"
 GEMINI_AUTH_TOKENS_PATH = "auth_tokens"
 
 
-def build_gemini_live_instructions(scenario: Scenario, difficulty: str, profile_context: str = "") -> str:
+def build_gemini_live_instructions(
+    scenario: Scenario,
+    difficulty: str,
+    profile_context: str = "",
+    skill_card_context: str = "",
+) -> str:
     expressions = ", ".join(scenario.target_expressions)
     instructions = (
         "You are an AI English speaking coach running a realistic voice role-play. "
@@ -31,6 +37,8 @@ def build_gemini_live_instructions(scenario: Scenario, difficulty: str, profile_
     )
     if profile_context:
         instructions += f" {profile_context}"
+    if skill_card_context:
+        instructions += f" {skill_card_context}"
     return instructions
 
 
@@ -45,6 +53,7 @@ def build_gemini_live_token_config(
     scenario: Scenario,
     difficulty: str,
     profile_context: str = "",
+    skill_card_context: str = "",
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     return {
@@ -60,7 +69,7 @@ def build_gemini_live_token_config(
             "systemInstruction": {
                 "parts": [
                     {
-                        "text": build_gemini_live_instructions(scenario, difficulty, profile_context),
+                        "text": build_gemini_live_instructions(scenario, difficulty, profile_context, skill_card_context),
                     },
                 ],
             },
@@ -133,11 +142,14 @@ async def create_gemini_live_token(
             detail=f"Unknown scenario_id: {practice_session.scenario_id}",
         )
 
+    profile = db.get(LearnerProfile, practice_session.user_id)
+    skill_cards = build_session_skill_cards(scenario, practice_session.difficulty, practice_session.id, profile)
     token_config = build_gemini_live_token_config(
         settings=settings,
         scenario=scenario,
         difficulty=practice_session.difficulty,
-        profile_context=get_profile_context(db.get(LearnerProfile, practice_session.user_id), practice_session.scenario_id),
+        profile_context=get_profile_context(profile, practice_session.scenario_id),
+        skill_card_context=skill_card_instruction(skill_cards),
     )
     gemini_response = await request_gemini_live_token(settings=settings, token_config=token_config)
 

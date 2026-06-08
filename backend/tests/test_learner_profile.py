@@ -107,3 +107,54 @@ async def test_profile_accumulates_recurring_correction_counts_across_reports() 
     assert profile["practice_count"] == 2
     assert correction["count"] == 2
     assert "I was responsible for" in profile["coach_note"]
+
+
+@pytest.mark.anyio
+async def test_can_forget_one_memory_item_and_rebuild_profile_focus() -> None:
+    user_id = f"profile-user-{uuid4()}"
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        session_id = await create_session(client, user_id=user_id, scenario_id="restaurant", difficulty="a2")
+        await add_turn(client, session_id, "user", "I want cappuccino. Can you recommend me dessert?")
+        report_response = await client.post(f"/api/sessions/{session_id}/report")
+        forget_response = await client.post(
+            f"/api/learner-profiles/{user_id}/memory/forget",
+            json={"label": "I'd like...", "memory_type": "correction", "scenario_id": "restaurant"},
+        )
+        profile_response = await client.get(f"/api/learner-profiles/{user_id}")
+
+    assert report_response.status_code == 201
+    assert forget_response.status_code == 200
+    profile = profile_response.json()
+    assert all(item["suggestion"] != "I'd like..." for item in profile["recurring_corrections"])
+    assert "I'd like" not in profile["coach_note"]
+
+
+@pytest.mark.anyio
+async def test_can_clear_current_scenario_memory_without_removing_other_routes() -> None:
+    user_id = f"profile-user-{uuid4()}"
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        restaurant_session_id = await create_session(client, user_id=user_id, scenario_id="restaurant", difficulty="a2")
+        await add_turn(client, restaurant_session_id, "user", "I want cappuccino.")
+        restaurant_report_response = await client.post(f"/api/sessions/{restaurant_session_id}/report")
+
+        interview_session_id = await create_session(client, user_id=user_id, scenario_id="interview", difficulty="b1")
+        await add_turn(client, interview_session_id, "user", "I responsible for onboarding customers.")
+        interview_report_response = await client.post(f"/api/sessions/{interview_session_id}/report")
+
+        clear_response = await client.post(
+            f"/api/learner-profiles/{user_id}/memory/clear",
+            json={"scenario_id": "restaurant"},
+        )
+        profile_response = await client.get(f"/api/learner-profiles/{user_id}")
+
+    assert restaurant_report_response.status_code == 201
+    assert interview_report_response.status_code == 201
+    assert clear_response.status_code == 200
+    profile = profile_response.json()
+    assert all("restaurant" not in item.get("scenario_counts", {}) for item in profile["recurring_corrections"])
+    assert all(item["scenario_id"] != "restaurant" for item in profile["missed_expressions"])
+    assert any(item["suggestion"] == "I was responsible for..." for item in profile["recurring_corrections"])
