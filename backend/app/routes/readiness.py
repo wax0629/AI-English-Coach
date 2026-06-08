@@ -37,19 +37,19 @@ def get_readiness(settings: Settings = Depends(get_app_settings)) -> ReadinessRe
                     bool(settings.openai_api_key),
                     "OpenAI Realtime",
                     "Realtime voice is configured.",
-                    "OPENAI_API_KEY is missing; use Gemini Live or demo turns.",
+                    "OpenAI credential is missing; use Gemini Live or demo turns.",
                 ),
                 "gemini_live": _service(
                     bool(settings.gemini_api_key),
                     "Gemini Live",
                     "Gemini Live token flow is configured.",
-                    "GEMINI_API_KEY is missing; OpenAI voice and demo turns can still run.",
+                    "Gemini credential is missing; OpenAI voice and demo turns can still run.",
                 ),
                 "azure_pronunciation": _service(
                     bool(settings.azure_speech_key and settings.azure_speech_region),
                     "Azure pronunciation",
                     "Pronunciation assessment is configured.",
-                    "AZURE_SPEECH_KEY or AZURE_SPEECH_REGION is missing; drills will show setup guidance.",
+                    "Azure Speech credential or region is missing; drills will show setup guidance.",
                 ),
                 "report_llm": _service(
                     report_ready,

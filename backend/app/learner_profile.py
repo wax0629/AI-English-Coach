@@ -13,6 +13,7 @@ LOW_SCORE_LABELS = {
     "vocabulary": "词汇",
     "goal_completion": "目标完成",
 }
+MEMORY_RETENTION_PRACTICES = 4
 
 
 def _now() -> datetime:
@@ -23,6 +24,7 @@ def _merge_corrections(
     existing: list[dict[str, Any]],
     scenario_id: str,
     corrections: list[dict[str, str]],
+    practice_index: int,
 ) -> list[dict[str, Any]]:
     by_suggestion = {item["suggestion"].lower(): dict(item) for item in existing}
 
@@ -44,6 +46,7 @@ def _merge_corrections(
         item["reason"] = correction["reason"]
         item["severity"] = correction["severity"]
         item["count"] = int(item.get("count", 0)) + 1
+        item["last_seen_practice"] = practice_index
         scenario_counts[scenario_id] = int(scenario_counts.get(scenario_id, 0)) + 1
         item["scenario_counts"] = scenario_counts
         by_suggestion[key] = item
@@ -55,8 +58,13 @@ def _merge_missed_expressions(
     existing: list[dict[str, Any]],
     scenario_id: str,
     missed_expressions: list[str],
+    target_hits: list[str],
+    practice_index: int,
 ) -> list[dict[str, Any]]:
     by_expression = {f"{item['scenario_id']}::{item['expression'].lower()}": dict(item) for item in existing}
+
+    for expression in target_hits:
+        by_expression.pop(f"{scenario_id}::{expression.lower()}", None)
 
     for expression in missed_expressions:
         key = f"{scenario_id}::{expression.lower()}"
@@ -64,9 +72,19 @@ def _merge_missed_expressions(
         if item is None:
             item = {"expression": expression, "scenario_id": scenario_id, "count": 0}
         item["count"] = int(item.get("count", 0)) + 1
+        item["last_seen_practice"] = practice_index
         by_expression[key] = item
 
     return sorted(by_expression.values(), key=lambda item: (-int(item["count"]), item["expression"]))[:8]
+
+
+def _prune_stale_items(items: list[dict[str, Any]], practice_index: int) -> list[dict[str, Any]]:
+    pruned: list[dict[str, Any]] = []
+    for item in items:
+        last_seen = int(item.get("last_seen_practice", practice_index))
+        if practice_index - last_seen <= MEMORY_RETENTION_PRACTICES:
+            pruned.append(item)
+    return pruned
 
 
 def _score_focus_areas(scores: dict[str, int]) -> list[dict[str, Any]]:
@@ -127,6 +145,8 @@ def _build_focus_areas(
 
 
 def build_coach_note(focus_areas: list[dict[str, Any]]) -> str:
+    if not focus_areas:
+        return "当前没有需要持续提醒的弱点，下一轮会重新观察你的表达。"
     primary = focus_areas[0]
     labels = "；".join(item["label"] for item in focus_areas[:2])
     if primary["category"] == "correction":
@@ -134,6 +154,34 @@ def build_coach_note(focus_areas: list[dict[str, Any]]) -> str:
     if primary["category"] == "target_expression":
         return f"下次练习优先引导学习者说出目标表达：{labels}。"
     return f"下次练习优先关注：{labels}。"
+
+
+def _focus_areas_from_memory(
+    corrections: list[dict[str, Any]],
+    missed_expressions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    focus: list[dict[str, Any]] = []
+    for correction in corrections[:2]:
+        focus.append(
+            {
+                "category": "correction",
+                "label": correction["suggestion"],
+                "detail": correction["reason"],
+                "count": int(correction["count"]),
+                "scenario_counts": dict(correction.get("scenario_counts") or {}),
+            }
+        )
+    for expression in missed_expressions[:2]:
+        focus.append(
+            {
+                "category": "target_expression",
+                "label": expression["expression"],
+                "detail": "这类目标表达还没有稳定迁移到真实回答里。",
+                "count": int(expression["count"]),
+                "scenario_id": expression["scenario_id"],
+            }
+        )
+    return focus[:4]
 
 
 def _has_multiple_scenarios(scenario_counts: dict[str, int]) -> bool:
@@ -260,16 +308,22 @@ def update_learner_profile_from_report(
         profile.updated_at = updated_at
         return profile
 
+    practice_index = profile.practice_count + 1
     recurring_corrections = _merge_corrections(
         list(profile.recurring_corrections or []),
         str(report_payload["scenario_id"]),
         list(report_payload.get("corrections", [])),
+        practice_index,
     )
     missed_expressions = _merge_missed_expressions(
         list(profile.missed_expressions or []),
         str(report_payload["scenario_id"]),
         list(report_payload.get("metrics", {}).get("missed_target_expressions", [])),
+        list(report_payload.get("metrics", {}).get("target_expression_hits", [])),
+        practice_index,
     )
+    recurring_corrections = _prune_stale_items(recurring_corrections, practice_index)
+    missed_expressions = _prune_stale_items(missed_expressions, practice_index)
     focus_areas = _build_focus_areas(
         recurring_corrections,
         missed_expressions,
@@ -285,3 +339,86 @@ def update_learner_profile_from_report(
     profile.coach_note = build_coach_note(focus_areas)
     profile.updated_at = updated_at
     return profile
+
+
+def _remove_scenario_count(item: dict[str, Any], scenario_id: str) -> dict[str, Any] | None:
+    scenario_counts = dict(item.get("scenario_counts") or {})
+    if scenario_id not in scenario_counts:
+        return item
+    scenario_counts.pop(scenario_id, None)
+    if not scenario_counts:
+        return None
+    next_item = dict(item)
+    next_item["scenario_counts"] = scenario_counts
+    next_item["count"] = sum(int(count) for count in scenario_counts.values())
+    return next_item
+
+
+def _refresh_profile_memory(profile: LearnerProfile, updated_at: datetime | None = None) -> LearnerProfile:
+    profile.recurring_corrections = sorted(
+        list(profile.recurring_corrections or []),
+        key=lambda item: (-int(item.get("count", 0)), item.get("suggestion", "")),
+    )[:8]
+    profile.missed_expressions = sorted(
+        list(profile.missed_expressions or []),
+        key=lambda item: (-int(item.get("count", 0)), item.get("expression", "")),
+    )[:8]
+    profile.focus_areas = _focus_areas_from_memory(profile.recurring_corrections, profile.missed_expressions)
+    profile.coach_note = build_coach_note(profile.focus_areas)
+    profile.updated_at = updated_at or _now()
+    return profile
+
+
+def forget_learner_memory(
+    profile: LearnerProfile,
+    memory_type: str,
+    label: str,
+    scenario_id: str | None = None,
+    updated_at: datetime | None = None,
+) -> LearnerProfile:
+    label_key = label.strip().lower()
+    if memory_type in {"any", "correction"}:
+        corrections: list[dict[str, Any]] = []
+        for item in list(profile.recurring_corrections or []):
+            if str(item.get("suggestion", "")).strip().lower() != label_key:
+                corrections.append(item)
+                continue
+            if scenario_id:
+                next_item = _remove_scenario_count(item, scenario_id)
+                if next_item is not None:
+                    corrections.append(next_item)
+            # No scenario means the user wants the whole memory item gone.
+        profile.recurring_corrections = corrections
+    if memory_type in {"any", "target_expression"}:
+        profile.missed_expressions = [
+            item
+            for item in list(profile.missed_expressions or [])
+            if not (
+                str(item.get("expression", "")).strip().lower() == label_key
+                and (scenario_id is None or str(item.get("scenario_id")) == scenario_id)
+            )
+        ]
+
+    return _refresh_profile_memory(profile, updated_at)
+
+
+def clear_learner_memory(
+    profile: LearnerProfile,
+    scenario_id: str | None = None,
+    updated_at: datetime | None = None,
+) -> LearnerProfile:
+    if scenario_id is None:
+        profile.recurring_corrections = []
+        profile.missed_expressions = []
+        return _refresh_profile_memory(profile, updated_at)
+
+    corrections: list[dict[str, Any]] = []
+    for item in list(profile.recurring_corrections or []):
+        next_item = _remove_scenario_count(item, scenario_id)
+        if next_item is not None:
+            corrections.append(next_item)
+    profile.recurring_corrections = corrections
+    profile.missed_expressions = [
+        item for item in list(profile.missed_expressions or []) if str(item.get("scenario_id")) != scenario_id
+    ]
+    return _refresh_profile_memory(profile, updated_at)

@@ -4,6 +4,8 @@ import {
   BriefcaseBusiness,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   CircleStop,
   Coffee,
   Flame,
@@ -19,6 +21,7 @@ import {
   Sparkles,
   Star,
   Target,
+  Trash2,
   Trophy,
   Volume2,
   Waves,
@@ -42,6 +45,7 @@ import {
   type ReadinessResponse,
   type ServiceReadiness,
 } from "./readiness";
+import { buildSkillCardStates, type SessionSkillCard, type SkillCardState } from "./skill-cards";
 import "./styles.css";
 
 type Difficulty = "a2" | "b1" | "b2";
@@ -68,6 +72,7 @@ type CreatedSession = {
   difficulty: Difficulty;
   status: "active" | "finished";
   learner_profile: LearnerProfile | null;
+  skill_cards: SessionSkillCard[];
 };
 
 type ConversationRole = "user" | "assistant";
@@ -278,13 +283,56 @@ function ScenarioBackdrop({ scenarioId }: { scenarioId: string }) {
   return null;
 }
 
+function formatMemoryHeading(title: string) {
+  const practiceCountMatch = title.match(/^(\d+)\s*次练习记忆$/);
+  if (practiceCountMatch) {
+    return {
+      meta: `${practiceCountMatch[1]} 次练习`,
+      title: "路线记忆",
+    };
+  }
+
+  if (title.includes("通用")) {
+    return {
+      meta: "跨路线",
+      title: "通用记忆",
+    };
+  }
+
+  return {
+    meta: "",
+    title,
+  };
+}
+
 function LearnerMemoryPanel({
   className = "",
+  isUpdating = false,
+  onClear,
+  onForget,
   summary,
 }: {
   className?: string;
+  isUpdating?: boolean;
+  onClear?: () => void;
+  onForget?: (label: string) => void;
   summary: LearnerProfileSummary;
 }) {
+  const compactChipLimit = 2;
+  const [isExpanded, setIsExpanded] = useState(false);
+  const memoryHeading = formatMemoryHeading(summary.title);
+  const hasOverflowChips = summary.chips.length > compactChipLimit;
+  const visibleChips =
+    hasOverflowChips && !isExpanded ? summary.chips.slice(0, compactChipLimit) : summary.chips;
+
+  useEffect(() => {
+    setIsExpanded(false);
+  }, [summary.title, summary.note, summary.chips]);
+
+  function chipLabel(chip: string) {
+    return chip.replace(/\sx\d+$/i, "");
+  }
+
   return (
     <div className={`learner-memory ${className}`.trim()}>
       <div className="learner-memory-head">
@@ -292,13 +340,76 @@ function LearnerMemoryPanel({
           <Sparkles aria-hidden="true" />
           Coach Memory
         </span>
-        <strong>{summary.title}</strong>
+        <div className="learner-memory-title">
+          <strong>{memoryHeading.title}</strong>
+          {memoryHeading.meta ? <small>{memoryHeading.meta}</small> : null}
+        </div>
+        {onClear ? (
+          <button disabled={isUpdating} onClick={onClear} title="清空当前路线记忆" type="button">
+            {isUpdating ? <Loader2 className="spin" aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
+          </button>
+        ) : null}
       </div>
       <p>{summary.note}</p>
       <div className="learner-memory-chips">
-        {summary.chips.map((chip) => (
-          <span key={chip}>{chip}</span>
+        {visibleChips.map((chip) => (
+          <span key={chip}>
+            {chip}
+            {onForget ? (
+              <button disabled={isUpdating} onClick={() => onForget(chipLabel(chip))} title={`忽略 ${chipLabel(chip)}`} type="button">
+                <CircleStop aria-hidden="true" />
+              </button>
+            ) : null}
+          </span>
         ))}
+        {hasOverflowChips ? (
+          <button
+            aria-expanded={isExpanded}
+            className="memory-toggle-chip"
+            onClick={() => setIsExpanded((expanded) => !expanded)}
+            type="button"
+          >
+            {isExpanded ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
+            {isExpanded ? "收起" : `+${summary.chips.length - compactChipLimit} 条`}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SkillCardDeck({
+  cards,
+  className = "",
+  previewExpressions,
+}: {
+  cards: SkillCardState[];
+  className?: string;
+  previewExpressions: string[];
+}) {
+  const hasLiveCards = cards.length > 0;
+  return (
+    <div className={`dynamic-skill-deck ${className}`.trim()}>
+      <strong>
+        <Star aria-hidden="true" />
+        {hasLiveCards ? "本局技能卡" : "技能卡词库"}
+      </strong>
+      <div>
+        {hasLiveCards
+          ? cards.map((card) => (
+              <span className={`skill-card-token ${card.status} ${card.source}`} key={card.id}>
+                <em>{card.statusLabel}</em>
+                <b>{card.expression}</b>
+                <small>{card.hint}</small>
+              </span>
+            ))
+          : previewExpressions.map((expression) => (
+              <span className="skill-card-token preview" key={expression}>
+                <em>开局抽卡</em>
+                <b>{expression}</b>
+                <small>锁定副本后随机抽 3 张本局常用表达</small>
+              </span>
+            ))}
       </div>
     </div>
   );
@@ -355,6 +466,7 @@ function App() {
   const [isConnectingRealtime, setIsConnectingRealtime] = useState(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [isLoadingDemoTurns, setIsLoadingDemoTurns] = useState(false);
+  const [isUpdatingMemory, setIsUpdatingMemory] = useState(false);
   const [error, setError] = useState<string>("");
   const [roomError, setRoomError] = useState<string>("");
   const [reportError, setReportError] = useState<string>("");
@@ -477,6 +589,16 @@ function App() {
     () => buildLearnerProfileSummary(learnerProfile, activeScenario?.id ?? selectedScenarioId),
     [activeScenario?.id, learnerProfile, selectedScenarioId],
   );
+  const skillCardStates = useMemo(
+    () =>
+      buildSkillCardStates({
+        cards: createdSession?.skill_cards ?? [],
+        passingScore: drillPassingScore,
+        pronunciationResults,
+        turns,
+      }),
+    [createdSession?.skill_cards, pronunciationResults, turns],
+  );
 
   function selectScenario(scenario: Scenario) {
     setSelectedScenarioId(scenario.id);
@@ -539,6 +661,65 @@ function App() {
     } catch {
       // Learner memory is helpful, but it should never block a fresh speaking session.
     }
+  }
+
+  async function updateLearnerMemory(
+    endpoint: "clear" | "forget",
+    payload: Record<string, string | null>,
+    successMessage: string,
+  ) {
+    if (!learnerProfile) {
+      return;
+    }
+
+    try {
+      setIsUpdatingMemory(true);
+      setError("");
+      setRoomError("");
+      const response = await fetch(`${apiBaseUrl}/api/learner-profiles/${learnerUserId}/memory/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(body?.detail ?? "Coach Memory 更新失败");
+      }
+      const profile = (await response.json()) as LearnerProfile;
+      setLearnerProfile(profile);
+      setRoomNotice(successMessage);
+    } catch (memoryError) {
+      const message = memoryError instanceof Error ? memoryError.message : "Coach Memory 更新失败";
+      if (view === "map") {
+        setError(message);
+      } else {
+        setRoomError(message);
+      }
+    } finally {
+      setIsUpdatingMemory(false);
+    }
+  }
+
+  function forgetMemoryChip(label: string) {
+    void updateLearnerMemory(
+      "forget",
+      {
+        label,
+        memory_type: "any",
+        scenario_id: activeScenario?.id ?? selectedScenarioId,
+      },
+      "已忽略这条 Coach Memory",
+    );
+  }
+
+  function clearCurrentScenarioMemory() {
+    void updateLearnerMemory(
+      "clear",
+      {
+        scenario_id: activeScenario?.id ?? selectedScenarioId,
+      },
+      "当前路线 Coach Memory 已清理",
+    );
   }
 
   async function loadReadiness() {
@@ -1411,62 +1592,68 @@ function App() {
 
           <aside className="mission-console" aria-label="mission console">
             <div className="console-header">
-              <span>Mission Console</span>
+              <span>Mission</span>
               <strong>{createdSession.difficulty.toUpperCase()}</strong>
             </div>
-            <div className="provider-switch" aria-label="voice provider">
-              {voiceProviderOptions.map((provider) => (
-                <button
-                  className={provider.id === voiceProvider ? "is-active" : ""}
-                  key={provider.id}
-                  onClick={() => {
-                    closeRealtimeConnection("idle");
-                    setVoiceProvider(provider.id);
-                    setRoomError("");
-                    setRoomNotice(
-                      provider.id === "gemini"
-                        ? "Gemini Live 将使用 WebSocket 音频流"
-                        : "OpenAI Realtime 将使用 WebRTC 语音链路",
-                    );
-                  }}
-                  type="button"
-                >
-                  <span>{provider.label}</span>
-                  <small>{provider.caption}</small>
-                </button>
-              ))}
-            </div>
-            <DemoStatusPanel className="room-demo-status" readiness={readiness} />
-            <div className="demo-runner">
-              <div>
-                <span>演示兜底</span>
-                <strong>语音链路波动时保持闭环</strong>
+
+            <div className="console-action-dock">
+              <div className="provider-switch compact-provider-switch" aria-label="voice provider">
+                {voiceProviderOptions.map((provider) => (
+                  <button
+                    className={provider.id === voiceProvider ? "is-active" : ""}
+                    key={provider.id}
+                    onClick={() => {
+                      closeRealtimeConnection("idle");
+                      setVoiceProvider(provider.id);
+                      setRoomError("");
+                      setRoomNotice(
+                        provider.id === "gemini"
+                          ? "Gemini Live 将使用 WebSocket 音频流"
+                          : "OpenAI Realtime 将使用 WebRTC 语音链路",
+                      );
+                    }}
+                    type="button"
+                  >
+                    <span>{provider.label}</span>
+                    <small>{provider.caption}</small>
+                  </button>
+                ))}
               </div>
-              <button disabled={isLoadingDemoTurns} onClick={() => void loadDemoConversation()} type="button">
+              <button className="demo-load-button" disabled={isLoadingDemoTurns} onClick={() => void loadDemoConversation()} type="button">
                 {isLoadingDemoTurns ? <Loader2 className="spin" aria-hidden="true" /> : <Play aria-hidden="true" />}
-                <span>{isLoadingDemoTurns ? "载入中" : turns.length ? "刷新演示" : "载入演示对话"}</span>
+                <span>{isLoadingDemoTurns ? "载入中" : turns.length ? "刷新演示" : "载入演示"}</span>
               </button>
             </div>
-            <div className="console-metric">
-              <Trophy aria-hidden="true" />
+
+            <DemoStatusPanel className="room-demo-status" readiness={readiness} />
+
+            <div className="mission-summary-strip">
               <div>
+                <Trophy aria-hidden="true" />
                 <span>奖励</span>
                 <strong>{activeMeta?.reward ?? "练习徽章"}</strong>
               </div>
-            </div>
-            <div className="console-metric">
-              <Target aria-hidden="true" />
               <div>
+                <Target aria-hidden="true" />
                 <span>目标</span>
                 <strong>{activeMeta?.checkpoint ?? "完成一次自然对话"}</strong>
               </div>
             </div>
-            {learnerMemorySummary ? <LearnerMemoryPanel className="room-memory" summary={learnerMemorySummary} /> : null}
-            <div className="room-skill-deck">
-              {activeScenario.target_expressions.map((expression) => (
-                <span key={expression}>{expression}</span>
-              ))}
-            </div>
+
+            {learnerMemorySummary ? (
+              <LearnerMemoryPanel
+                className="room-memory"
+                isUpdating={isUpdatingMemory}
+                onClear={clearCurrentScenarioMemory}
+                onForget={forgetMemoryChip}
+                summary={learnerMemorySummary}
+              />
+            ) : null}
+            <SkillCardDeck
+              cards={skillCardStates}
+              className="room-skill-deck"
+              previewExpressions={activeScenario.target_expressions}
+            />
           </aside>
 
           <section className="transcript-panel" aria-label="conversation transcript">
@@ -1655,7 +1842,14 @@ function App() {
                 <p>{selectedScenario.user_goal}</p>
               </div>
 
-              {learnerMemorySummary ? <LearnerMemoryPanel summary={learnerMemorySummary} /> : null}
+              {learnerMemorySummary ? (
+                <LearnerMemoryPanel
+                  isUpdating={isUpdatingMemory}
+                  onClear={clearCurrentScenarioMemory}
+                  onForget={forgetMemoryChip}
+                  summary={learnerMemorySummary}
+                />
+              ) : null}
 
               <div className="objective-list" aria-label="quest checklist">
                 <span>
@@ -1686,17 +1880,7 @@ function App() {
                 ))}
               </div>
 
-              <div className="skill-deck">
-                <strong>
-                  <Star aria-hidden="true" />
-                  技能卡
-                </strong>
-                <div>
-                  {selectedScenario.target_expressions.map((expression) => (
-                    <span key={expression}>{expression}</span>
-                  ))}
-                </div>
-              </div>
+              <SkillCardDeck cards={[]} className="skill-deck" previewExpressions={selectedScenario.target_expressions} />
 
               {error ? (
                 <div className="message-bar error">

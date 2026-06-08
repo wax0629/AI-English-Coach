@@ -11,12 +11,18 @@ from app.learner_profile import get_profile_context
 from app.models import LearnerProfile, PracticeSession
 from app.scenarios import Scenario, get_scenario
 from app.schemas import CreateRealtimeClientSecretRequest, RealtimeClientSecretResponse
+from app.skill_cards import build_session_skill_cards, skill_card_instruction
 
 
 router = APIRouter(prefix="/api/realtime", tags=["realtime"])
 
 
-def build_realtime_instructions(scenario: Scenario, difficulty: str, profile_context: str = "") -> str:
+def build_realtime_instructions(
+    scenario: Scenario,
+    difficulty: str,
+    profile_context: str = "",
+    skill_card_context: str = "",
+) -> str:
     expressions = ", ".join(scenario.target_expressions)
     instructions = (
         "You are an AI English speaking coach running a realistic role-play. "
@@ -30,6 +36,8 @@ def build_realtime_instructions(scenario: Scenario, difficulty: str, profile_con
     )
     if profile_context:
         instructions += f" {profile_context}"
+    if skill_card_context:
+        instructions += f" {skill_card_context}"
     return instructions
 
 
@@ -38,12 +46,13 @@ def build_realtime_session_config(
     scenario: Scenario,
     difficulty: str,
     profile_context: str = "",
+    skill_card_context: str = "",
 ) -> dict[str, Any]:
     return {
         "session": {
             "type": "realtime",
             "model": settings.openai_realtime_model,
-            "instructions": build_realtime_instructions(scenario, difficulty, profile_context),
+            "instructions": build_realtime_instructions(scenario, difficulty, profile_context, skill_card_context),
             "audio": {
                 "input": {
                     "transcription": {
@@ -118,11 +127,14 @@ async def create_realtime_client_secret(
             detail=f"Unknown scenario_id: {practice_session.scenario_id}",
         )
 
+    profile = db.get(LearnerProfile, practice_session.user_id)
+    skill_cards = build_session_skill_cards(scenario, practice_session.difficulty, practice_session.id, profile)
     session_config = build_realtime_session_config(
         settings=settings,
         scenario=scenario,
         difficulty=practice_session.difficulty,
-        profile_context=get_profile_context(db.get(LearnerProfile, practice_session.user_id), practice_session.scenario_id),
+        profile_context=get_profile_context(profile, practice_session.scenario_id),
+        skill_card_context=skill_card_instruction(skill_cards),
     )
     openai_response = await request_openai_client_secret(
         settings=settings,

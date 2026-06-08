@@ -9,6 +9,7 @@ from app.learner_profile import to_learner_profile_response
 from app.models import LearnerProfile, PracticeSession
 from app.scenarios import get_scenario, list_scenarios
 from app.schemas import CreateSessionRequest, ScenarioResponse, SessionResponse
+from app.skill_cards import build_session_skill_cards
 
 
 router = APIRouter(prefix="/api", tags=["sessions"])
@@ -40,6 +41,7 @@ def create_session(payload: CreateSessionRequest, db: Session = Depends(get_db))
     db.commit()
     db.refresh(session)
 
+    profile = db.get(LearnerProfile, session.user_id)
     return SessionResponse(
         session_id=session.id,
         user_id=session.user_id,
@@ -47,5 +49,6 @@ def create_session(payload: CreateSessionRequest, db: Session = Depends(get_db))
         difficulty=payload.difficulty,
         status="active",
         created_at=session.created_at,
-        learner_profile=to_learner_profile_response(profile) if (profile := db.get(LearnerProfile, session.user_id)) else None,
+        learner_profile=to_learner_profile_response(profile) if profile else None,
+        skill_cards=build_session_skill_cards(scenario, payload.difficulty, session.id, profile),
     )
